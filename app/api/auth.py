@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import hash_password, verify_password, create_access_token, get_current_user_id
 from app.db.database import get_db
 from app.db.models import User
 
@@ -52,3 +52,15 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     token = create_access_token(subject=str(user.id))
     return TokenResponse(access_token=token)
+
+
+@router.get("/me")
+def me(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"id": user.id, "username": user.username}
