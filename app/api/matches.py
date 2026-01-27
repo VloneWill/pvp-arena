@@ -7,12 +7,10 @@ from app.db.models import Match
 from app.game.schemas import MatchOut, MatchEndRequest, ActionRequest, GameStateOut
 from app.game.combat import (
     initialize_match,
-    process_attack,
-    process_defend,
-    process_heal,
-    process_double_attack_ability,
-    advance_turn,
     check_match_end,
+    engine,
+    InvalidActionError,
+    MatchNotActiveError,
 )
 
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -115,40 +113,35 @@ def take_action(
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
-    if match.status != "active":
-        raise HTTPException(status_code=409, detail="Match is not active")
-
     # Initialize match if not already initialized
     if match.current_turn is None:
         initialize_match(match)
 
-    # Check if it's the user's turn
-    if match.current_turn != user_id:
-        raise HTTPException(status_code=409, detail="Not your turn")
-
-    # Process the action
     is_player1 = user_id == match.player1_id
     opponent_id = match.player2_id if is_player1 else match.player1_id
-    result = {}
 
-    if payload.action == "attack":
-        result = process_attack(match, user_id, opponent_id)
-    elif payload.action == "defend":
-        result = process_defend(match, user_id)
-    elif payload.action == "heal":
-        result = process_heal(match, user_id)
-    elif payload.action == "double_attack":
-        result = process_double_attack_ability(match, user_id)
-
-    # Check if match ended
-    winner_id = check_match_end(match)
-
-    # Advance turn (unless match ended)
-    if winner_id is None:
-        advance_turn(match)
+    try:
+        if payload.action == "attack":
+            result = engine.attack(match, attacker_id=user_id, defender_id=opponent_id)
+        elif payload.action == "defend":
+            result = engine.defend(match, player_id=user_id)
+        elif payload.action == "heal":
+            result = engine.heal(match, player_id=user_id)
+        elif payload.action == "double_attack":
+            result = engine.double_attack(match, player_id=user_id)
+        else:
+            raise InvalidActionError(f"Unknown action: {payload.action}")
+    except MatchNotActiveError as exc:
+        # Match is no longer active
+        raise HTTPException(status_code=409, detail=str(exc))
+    except InvalidActionError as exc:
+        # Invalid turn, actor, or action
+        raise HTTPException(status_code=400, detail=str(exc))
 
     db.commit()
     db.refresh(match)
+
+    winner_id = result.get("winner_id")
 
     return {
         "action": payload.action,

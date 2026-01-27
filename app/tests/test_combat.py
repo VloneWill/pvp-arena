@@ -10,6 +10,7 @@ from app.game.combat import (
     MatchNotActiveError,
     InvalidActionError,
     CombatEngine,
+    process_double_attack_ability,
 )
 from app.db.models import Match
 
@@ -50,6 +51,19 @@ class TestDefense:
         after = match.player2_health
         assert before - after <= 10  # reduced damage
 
+    def test_defend_flag_clears_after_hit(self):
+        match = make_match()
+
+        # Player2 defends, then gets hit once
+        process_defend(match, player_id=2)
+        assert match.player2_defending is True
+
+        process_attack(match, attacker_id=1, defender_id=2)
+
+        # Defender flag should clear, attacker flag should remain False
+        assert match.player2_defending is False
+        assert match.player1_defending is False
+
 
 class TestHealing:
     def test_heal_caps_at_100(self):
@@ -59,6 +73,23 @@ class TestHealing:
         result = process_heal(match, player_id=1)
 
         assert result["new_health"] == 100
+
+
+class TestDoubleAttack:
+    def test_double_attack_applies_once_and_clears(self):
+        match = make_match()
+
+        # Give player1 a double-attack buff
+        process_double_attack_ability(match, player_id=1)
+        assert match.player1_ability_effect == "double_attack"
+
+        # First attack consumes the buff
+        process_attack(match, attacker_id=1, defender_id=2)
+        assert match.player1_ability_effect is None
+
+        # Second attack should not magically re-enable it
+        process_attack(match, attacker_id=1, defender_id=2)
+        assert match.player1_ability_effect is None
 
 
 class TestMatchEnd:
@@ -71,6 +102,15 @@ class TestMatchEnd:
 
         assert winner == 1
         assert match.status == "finished"
+
+    def test_health_never_below_zero(self):
+        match = make_match()
+        match.player2_health = 5
+
+        # Large number of attacks, health should clamp at 0
+        for _ in range(10):
+            process_attack(match, attacker_id=1, defender_id=2)
+            assert match.player2_health >= 0
 
 
 class TestTurns:
