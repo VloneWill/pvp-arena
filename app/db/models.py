@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func, Boolean
 from .database import Base
 
-
+#create the user model
 class User(Base):
     __tablename__ = "users"
 
@@ -11,6 +11,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+#create the match model
 class Match(Base):
     __tablename__ = "matches"
 

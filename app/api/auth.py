@@ -1,3 +1,4 @@
+#imports for the auth router
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -9,21 +10,25 @@ from app.db.models import User
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+#create the register request schema
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=8, max_length=72)
 
 
+#create the login request schema
 class LoginRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=8, max_length=72)
 
 
+#create the token response schema
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
 
+#create the register endpoint
 @router.post("/register", status_code=201)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == payload.username).first()
@@ -44,6 +49,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     return {"id": user.id, "username": user.username}
 
 
+#create the login endpoint
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == payload.username).first()
@@ -54,6 +60,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token)
 
 
+#create the me endpoint
 @router.get("/me")
 def me(
     user_id: int = Depends(get_current_user_id),

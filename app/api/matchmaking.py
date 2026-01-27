@@ -1,6 +1,8 @@
+#imports for the matchmaking router
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+#imports for the security
 from app.core.security import get_current_user_id
 from app.db.database import get_db
 from app.db.models import Match
@@ -8,9 +10,11 @@ from app.game.engine import queue
 from app.game.schemas import MatchOut, QueueStatusOut
 from app.game.combat import initialize_match
 
+#create the matchmaking router
 router = APIRouter(prefix="/matchmaking", tags=["matchmaking"])
 
 
+#create the join queue endpoint
 @router.post("/join")
 def join_queue(
     user_id: int = Depends(get_current_user_id),
@@ -35,6 +39,7 @@ def join_queue(
     return {"status": "matched", "match": MatchOut.model_validate(match)}
 
 
+#create the leave queue endpoint
 @router.post("/leave")
 def leave_queue(
     user_id: int = Depends(get_current_user_id),
@@ -43,6 +48,7 @@ def leave_queue(
     return {"status": "left"}
 
 
+#create the status endpoint
 @router.get("/status", response_model=QueueStatusOut)
 def status(
     user_id: int = Depends(get_current_user_id),

@@ -1,10 +1,13 @@
+#imports for the matches router
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user_id
 from app.db.database import get_db
 from app.db.models import Match
+#imports for the schemas
 from app.game.schemas import MatchOut, MatchEndRequest, ActionRequest, GameStateOut
+#imports for the combat
 from app.game.combat import (
     initialize_match,
     check_match_end,
@@ -12,26 +15,31 @@ from app.game.combat import (
     InvalidActionError,
     MatchNotActiveError,
 )
-
+#create the matches router
 router = APIRouter(prefix="/matches", tags=["matches"])
 
 
+#create the get match endpoint
 @router.get("/{match_id}", response_model=MatchOut)
 def get_match(
     match_id: int,
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    #get the match from the database
     match = db.query(Match).filter(Match.id == match_id).first()
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
 
+    #check if the user is in the match
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
+    #return the match
     return match
 
 
+#create the end match endpoint
 @router.post("/{match_id}/end", response_model=MatchOut)
 def end_match(
     match_id: int,
@@ -39,28 +47,34 @@ def end_match(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    #get the match from the database
     match = db.query(Match).filter(Match.id == match_id).first()
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
 
+    #check if the user is in the match
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
+    #check if the match is active
     if match.status != "active":
         raise HTTPException(status_code=409, detail="Match is not active")
 
+    #update the match status
     match.status = payload.status
     db.commit()
     db.refresh(match)
     return match
 
 
+#create the get game state endpoint
 @router.get("/{match_id}/state", response_model=GameStateOut)
 def get_game_state(
     match_id: int,
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    #get the match from the database
     match = db.query(Match).filter(Match.id == match_id).first()
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -98,7 +112,7 @@ def get_game_state(
         winner_id=winner_id,
     )
 
-
+#create the take action endpoint
 @router.post("/{match_id}/action")
 def take_action(
     match_id: int,

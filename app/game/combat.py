@@ -16,21 +16,24 @@ DEFEND_DAMAGE_REDUCTION = 0.5  # 50% damage reduction
 HEAL_AMOUNT = 15
 DOUBLE_ATTACK_MULTIPLIER = 2.0
 
-
+#create the invalid action error class
 class InvalidActionError(ValueError):
     """Base error for invalid combat actions."""
 
 
+#create the match not active error class
 class MatchNotActiveError(InvalidActionError):
     """Raised when trying to perform an action on a match that is not active."""
 
 
+#create the check match active function
 def _check_match_active(match: Match) -> None:
     """Check if match is active, raise MatchNotActiveError if not."""
     if match.status != "active":
         raise MatchNotActiveError(f"Match is not active (status: {match.status})")
 
 
+#create the check actor valid and alive function
 def _check_actor_valid_and_alive(match: Match, actor_id: int) -> None:
     """Ensure actor is one of the players and not dead."""
     if actor_id not in (match.player1_id, match.player2_id):
@@ -42,6 +45,7 @@ def _check_actor_valid_and_alive(match: Match, actor_id: int) -> None:
         raise InvalidActionError("Dead player cannot act")
 
 
+#create the initialize match function
 def initialize_match(match: Match) -> None:
     """
     Initialize a match for combat.
@@ -61,6 +65,7 @@ def initialize_match(match: Match) -> None:
         match.player2_ability_effect = None
 
 
+#create the process attack function
 def process_attack(match: Match, attacker_id: int, defender_id: int) -> Dict[str, Any]:
     """
     Process a basic attack action (no turn validation here).
@@ -122,6 +127,7 @@ def process_attack(match: Match, attacker_id: int, defender_id: int) -> Dict[str
     }
 
 
+#create the process defend function
 def process_defend(match: Match, player_id: int) -> Dict[str, Any]:
     """
     Process a defend action (no turn validation here).
@@ -143,6 +149,7 @@ def process_defend(match: Match, player_id: int) -> Dict[str, Any]:
     }
 
 
+#create the process heal function
 def process_heal(match: Match, player_id: int) -> Dict[str, Any]:
     """
     Process a heal ability (no turn validation here).
@@ -169,6 +176,7 @@ def process_heal(match: Match, player_id: int) -> Dict[str, Any]:
     }
 
 
+#create the process double attack ability function
 def process_double_attack_ability(match: Match, player_id: int) -> Dict[str, Any]:
     """
     Process the double-attack ability (no turn validation here).
@@ -190,6 +198,7 @@ def process_double_attack_ability(match: Match, player_id: int) -> Dict[str, Any
     }
 
 
+#create the advance turn function
 def advance_turn(match: Match) -> None:
     """
     Advance to the next turn.
@@ -204,6 +213,7 @@ def advance_turn(match: Match) -> None:
         match.current_turn = match.player1_id
 
 
+#create the check match end function
 def check_match_end(match: Match) -> Optional[int]:
     """
     Check if the match has ended.
@@ -220,6 +230,7 @@ def check_match_end(match: Match) -> Optional[int]:
     return None
 
 
+#create the check turn function
 def _check_turn(match: Match, actor_id: int) -> None:
     """Ensure it's the actor's turn."""
     if match.current_turn is None:
@@ -229,7 +240,7 @@ def _check_turn(match: Match, actor_id: int) -> None:
     if actor_id != match.current_turn:
         raise InvalidActionError("It is not this player's turn")
 
-
+#create the combat engine class
 class CombatEngine:
     """
     Higher-level combat engine that enforces:
@@ -239,6 +250,7 @@ class CombatEngine:
     - turn advances automatically after a valid action
     """
 
+    #create the attack method
     def attack(self, match: Match, attacker_id: int, defender_id: int) -> Dict[str, Any]:
         _check_match_active(match)
         _check_actor_valid_and_alive(match, attacker_id)
@@ -252,6 +264,7 @@ class CombatEngine:
 
         return {"winner_id": winner_id, **result}
 
+    #create the defend method
     def defend(self, match: Match, player_id: int) -> Dict[str, Any]:
         _check_match_active(match)
         _check_actor_valid_and_alive(match, player_id)
@@ -265,6 +278,7 @@ class CombatEngine:
 
         return {"winner_id": winner_id, **result}
 
+    #create the heal method
     def heal(self, match: Match, player_id: int) -> Dict[str, Any]:
         _check_match_active(match)
         _check_actor_valid_and_alive(match, player_id)
@@ -278,6 +292,7 @@ class CombatEngine:
 
         return {"winner_id": winner_id, **result}
 
+    #create the double attack method
     def double_attack(self, match: Match, player_id: int) -> Dict[str, Any]:
         _check_match_active(match)
         _check_actor_valid_and_alive(match, player_id)

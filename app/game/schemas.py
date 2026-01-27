@@ -1,7 +1,9 @@
+#imports for the schemas
 from pydantic import BaseModel, ConfigDict
 from typing import Literal
 
 
+#create the match out schema
 class MatchOut(BaseModel):
     id: int
     player1_id: int
@@ -11,20 +13,24 @@ class MatchOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+#create the queue status out schema
 class QueueStatusOut(BaseModel):
     in_queue: bool
     position: int | None
     queue_size: int
 
 
+#create the match end request schema
 class MatchEndRequest(BaseModel):
     status: Literal["finished", "canceled"]
 
 
+#create the action request schema
 class ActionRequest(BaseModel):
     action: Literal["attack", "defend", "heal", "double_attack"]
 
 
+#create the game state out schema
 class GameStateOut(BaseModel):
     match_id: int
     player1_id: int
