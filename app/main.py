@@ -1,11 +1,15 @@
-#Imports fast API
 from fastapi import FastAPI
 
-#Creates a FastAPI instance
+from app.api.auth import router as auth_router
+from app.db import models
+from app.db.database import engine
+
 app = FastAPI(title="PvP Arena")
 
-#Defines a health check endpoint
+models.Base.metadata.create_all(bind=engine)
+
+app.include_router(auth_router)
+
 @app.get("/health")
-#Returns a JSON response with a status of "ok"
 def health():
     return {"status": "ok"}
