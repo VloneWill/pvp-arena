@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Literal
 
 
@@ -8,8 +8,7 @@ class MatchOut(BaseModel):
     player2_id: int
     status: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class QueueStatusOut(BaseModel):
@@ -41,5 +40,4 @@ class GameStateOut(BaseModel):
     status: str
     winner_id: int | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

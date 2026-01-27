@@ -39,3 +39,26 @@ class TestMatchmakingQueue:
         assert q.position(2) is None
         assert q.position(3) == 2
 
+    def test_leave_nonexistent_is_noop(self):
+        q = MatchmakingQueue()
+
+        q.join(1)
+        q.leave(999)
+
+        assert q.size() == 1
+        assert q.position(1) == 1
+
+    def test_pop_pair_preserves_order_for_remaining(self):
+        q = MatchmakingQueue()
+
+        q.join(1)
+        q.join(2)
+        q.join(3)
+
+        pair = q.pop_pair()
+
+        assert pair == (1, 2)
+        assert q.size() == 1
+        assert q.position(3) == 1
+
+
