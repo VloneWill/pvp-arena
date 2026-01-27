@@ -298,7 +298,42 @@ class CombatEngine:
         _check_actor_valid_and_alive(match, player_id)
         _check_turn(match, player_id)
 
-        result = process_double_attack_ability(match, player_id)
+        # Double attack performs an immediate attack with double damage
+        is_player1 = player_id == match.player1_id
+        opponent_id = match.player2_id if is_player1 else match.player1_id
+        
+        # Calculate base damage
+        min_dmg, max_dmg = BASE_ATTACK_DAMAGE
+        base_damage = random.randint(min_dmg, max_dmg)
+        
+        # Apply double damage multiplier
+        damage = int(base_damage * DOUBLE_ATTACK_MULTIPLIER)
+        
+        # Check if defender is defending
+        defender_defending = match.player2_defending if is_player1 else match.player1_defending
+        if defender_defending:
+            damage = int(damage * (1 - DEFEND_DAMAGE_REDUCTION))
+            # Clear defense after being hit
+            if is_player1:
+                match.player2_defending = False
+            else:
+                match.player1_defending = False
+        
+        # Apply damage
+        if is_player1:
+            match.player2_health = max(0, match.player2_health - damage)
+            target_health = match.player2_health
+        else:
+            match.player1_health = max(0, match.player1_health - damage)
+            target_health = match.player1_health
+        
+        result = {
+            "action": "double_attack",
+            "damage": damage,
+            "defended": defender_defending,
+            "target_health": target_health,
+            "message": f"Double attack dealt {damage} damage!"
+        }
 
         winner_id = check_match_end(match)
         if winner_id is None:

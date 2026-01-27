@@ -1,6 +1,8 @@
 #imports for the matches router
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from typing import Optional, List
 
 from app.core.security import get_current_user_id
 from app.db.database import get_db
@@ -17,6 +19,32 @@ from app.game.combat import (
 )
 #create the matches router
 router = APIRouter(prefix="/matches", tags=["matches"])
+
+
+#create the get match history endpoint (MUST be before /{match_id} route)
+@router.get("/history", response_model=List[MatchOut])
+def match_history(
+    limit: int = 25,
+    offset: int = 0,
+    status: Optional[str] = None,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    q = db.query(Match).filter(
+        or_(Match.player1_id == user_id, Match.player2_id == user_id)
+    )
+
+    if status is not None:
+        q = q.filter(Match.status == status)
+
+    matches = (
+        q.order_by(Match.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return matches
 
 
 #create the get match endpoint
@@ -67,6 +95,38 @@ def end_match(
     return match
 
 
+#create the forfeit match endpoint
+@router.post("/{match_id}/forfeit", response_model=MatchOut)
+def forfeit_match(
+    match_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Forfeit an active match - opponent wins."""
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    if user_id not in (match.player1_id, match.player2_id):
+        raise HTTPException(status_code=403, detail="Not your match")
+
+    if match.status != "active":
+        raise HTTPException(status_code=409, detail="Match is not active")
+
+    # Set opponent as winner by setting forfeiting player's health to 0
+    if user_id == match.player1_id:
+        match.player1_health = 0
+    else:
+        match.player2_health = 0
+    
+    # Check match end to properly set winner
+    from app.game.combat import check_match_end
+    check_match_end(match)
+    db.commit()
+    db.refresh(match)
+    return match
+
+
 #create the get game state endpoint
 @router.get("/{match_id}/state", response_model=GameStateOut)
 def get_game_state(
@@ -82,8 +142,8 @@ def get_game_state(
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
-    # Initialize match if not already initialized
-    if match.current_turn is None:
+    # Initialize match if not already initialized (only if match hasn't started)
+    if match.current_turn is None and match.turn_number == 0:
         initialize_match(match)
         db.commit()
         db.refresh(match)
@@ -127,8 +187,8 @@ def take_action(
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
-    # Initialize match if not already initialized
-    if match.current_turn is None:
+    # Initialize match if not already initialized (only if match hasn't started)
+    if match.current_turn is None and match.turn_number == 0:
         initialize_match(match)
 
     is_player1 = user_id == match.player1_id
@@ -137,12 +197,20 @@ def take_action(
     try:
         if payload.action == "attack":
             result = engine.attack(match, attacker_id=user_id, defender_id=opponent_id)
+            result["attacker_id"] = user_id
+            result["defender_id"] = opponent_id
         elif payload.action == "defend":
             result = engine.defend(match, player_id=user_id)
+            result["actor_id"] = user_id
+            result["opponent_id"] = opponent_id
         elif payload.action == "heal":
             result = engine.heal(match, player_id=user_id)
+            result["actor_id"] = user_id
+            result["opponent_id"] = opponent_id
         elif payload.action == "double_attack":
             result = engine.double_attack(match, player_id=user_id)
+            result["attacker_id"] = user_id
+            result["defender_id"] = opponent_id
         else:
             raise InvalidActionError(f"Unknown action: {payload.action}")
     except MatchNotActiveError as exc:

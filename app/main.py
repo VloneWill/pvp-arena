@@ -1,5 +1,6 @@
 #imports for the FastAPI app
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 #imports for the routers
 from app.api.auth import router as auth_router
@@ -12,6 +13,15 @@ from app.db.database import engine
 
 #create the FastAPI app
 app = FastAPI(title="PvP Arena")
+
+#add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 #create the database tables
 models.Base.metadata.create_all(bind=engine)

@@ -71,3 +71,16 @@ def me(
         raise HTTPException(status_code=404, detail="User not found")
 
     return {"id": user.id, "username": user.username}
+
+
+#create the get user by id endpoint
+@router.get("/user/{user_id}")
+def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    """Get user info by ID (for looking up opponent usernames)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"id": user.id, "username": user.username}

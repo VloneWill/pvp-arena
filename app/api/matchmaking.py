@@ -20,6 +20,17 @@ def join_queue(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    # Check if user already has an active match
+    active_match = db.query(Match).filter(
+        (Match.player1_id == user_id) | (Match.player2_id == user_id),
+        Match.status == "active"
+    ).first()
+    
+    if active_match:
+        # Remove from queue if they're in it
+        queue.leave(user_id)
+        return {"status": "matched", "match": MatchOut.model_validate(active_match)}
+
     queue.join(user_id)
 
     pair = queue.pop_pair()
