@@ -1,8 +1,10 @@
 """
-Simple turn-based combat logic
+Simple turn-based combat logic.
+
+This module exposes both low-level functions (used by tests) and a higher-level
+CombatEngine that enforces turn rules and match state.
 """
 import random
-from sqlalchemy.orm import Session
 from app.db.models import Match
 
 
@@ -11,6 +13,31 @@ BASE_ATTACK_DAMAGE = (10, 20)  # min, max damage
 DEFEND_DAMAGE_REDUCTION = 0.5  # 50% damage reduction
 HEAL_AMOUNT = 15
 DOUBLE_ATTACK_MULTIPLIER = 2.0
+
+
+class InvalidActionError(ValueError):
+    """Base error for invalid combat actions."""
+
+
+class MatchNotActiveError(InvalidActionError):
+    """Raised when trying to perform an action on a match that is not active."""
+
+
+def _check_match_active(match: Match) -> None:
+    """Check if match is active, raise MatchNotActiveError if not."""
+    if match.status != "active":
+        raise MatchNotActiveError(f"Match is not active (status: {match.status})")
+
+
+def _check_actor_valid_and_alive(match: Match, actor_id: int) -> None:
+    """Ensure actor is one of the players and not dead."""
+    if actor_id not in (match.player1_id, match.player2_id):
+        raise InvalidActionError("Actor must be one of the match players")
+
+    if actor_id == match.player1_id and match.player1_health <= 0:
+        raise InvalidActionError("Dead player cannot act")
+    if actor_id == match.player2_id and match.player2_health <= 0:
+        raise InvalidActionError("Dead player cannot act")
 
 
 def initialize_match(match: Match) -> None:
@@ -27,7 +54,13 @@ def initialize_match(match: Match) -> None:
 
 
 def process_attack(match: Match, attacker_id: int, defender_id: int) -> dict:
-    """Process an attack action"""
+    """Process an attack action (no turn validation here)."""
+    _check_match_active(match)
+    _check_actor_valid_and_alive(match, attacker_id)
+
+    if attacker_id == defender_id:
+        raise InvalidActionError("Cannot attack yourself")
+
     is_player1 = attacker_id == match.player1_id
     defender_defending = match.player2_defending if is_player1 else match.player1_defending
     
@@ -69,7 +102,9 @@ def process_attack(match: Match, attacker_id: int, defender_id: int) -> dict:
 
 
 def process_defend(match: Match, player_id: int) -> dict:
-    """Process a defend action"""
+    """Process a defend action (no turn validation here)."""
+    _check_match_active(match)
+    _check_actor_valid_and_alive(match, player_id)
     is_player1 = player_id == match.player1_id
     if is_player1:
         match.player1_defending = True
@@ -83,7 +118,9 @@ def process_defend(match: Match, player_id: int) -> dict:
 
 
 def process_heal(match: Match, player_id: int) -> dict:
-    """Process a heal ability"""
+    """Process a heal ability (no turn validation here)."""
+    _check_match_active(match)
+    _check_actor_valid_and_alive(match, player_id)
     is_player1 = player_id == match.player1_id
     current_health = match.player1_health if is_player1 else match.player2_health
     new_health = min(100, current_health + HEAL_AMOUNT)
@@ -102,7 +139,9 @@ def process_heal(match: Match, player_id: int) -> dict:
 
 
 def process_double_attack_ability(match: Match, player_id: int) -> dict:
-    """Process double attack ability - next attack does 2x damage"""
+    """Process double attack ability - next attack does 2x damage (no turn validation here)."""
+    _check_match_active(match)
+    _check_actor_valid_and_alive(match, player_id)
     is_player1 = player_id == match.player1_id
     if is_player1:
         match.player1_ability_effect = "double_attack"
@@ -134,3 +173,79 @@ def check_match_end(match: Match) -> int | None:
         match.status = "finished"
         return match.player1_id
     return None
+
+
+def _check_turn(match: Match, actor_id: int) -> None:
+    """Ensure it's the actor's turn."""
+    if match.current_turn is None:
+        # If no turn set, treat as invalid usage of engine.
+        raise InvalidActionError("Current turn is not set on match")
+
+    if actor_id != match.current_turn:
+        raise InvalidActionError("It is not this player's turn")
+
+
+class CombatEngine:
+    """
+    Higher-level combat engine that enforces:
+    - match is active
+    - actor is a valid, alive player
+    - actor plays only on their turn
+    - turn advances automatically after a valid action
+    """
+
+    def attack(self, match: Match, attacker_id: int, defender_id: int) -> dict:
+        _check_match_active(match)
+        _check_actor_valid_and_alive(match, attacker_id)
+        _check_turn(match, attacker_id)
+
+        result = process_attack(match, attacker_id, defender_id)
+
+        winner_id = check_match_end(match)
+        if winner_id is None:
+            advance_turn(match)
+
+        return {"winner_id": winner_id, **result}
+
+    def defend(self, match: Match, player_id: int) -> dict:
+        _check_match_active(match)
+        _check_actor_valid_and_alive(match, player_id)
+        _check_turn(match, player_id)
+
+        result = process_defend(match, player_id)
+
+        winner_id = check_match_end(match)
+        if winner_id is None:
+            advance_turn(match)
+
+        return {"winner_id": winner_id, **result}
+
+    def heal(self, match: Match, player_id: int) -> dict:
+        _check_match_active(match)
+        _check_actor_valid_and_alive(match, player_id)
+        _check_turn(match, player_id)
+
+        result = process_heal(match, player_id)
+
+        winner_id = check_match_end(match)
+        if winner_id is None:
+            advance_turn(match)
+
+        return {"winner_id": winner_id, **result}
+
+    def double_attack(self, match: Match, player_id: int) -> dict:
+        _check_match_active(match)
+        _check_actor_valid_and_alive(match, player_id)
+        _check_turn(match, player_id)
+
+        result = process_double_attack_ability(match, player_id)
+
+        winner_id = check_match_end(match)
+        if winner_id is None:
+            advance_turn(match)
+
+        return {"winner_id": winner_id, **result}
+
+
+# Convenient shared engine instance
+engine = CombatEngine()
