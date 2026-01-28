@@ -1,3 +1,7 @@
+#imports for the dotenv
+from dotenv import load_dotenv
+load_dotenv()
+
 #imports for the FastAPI app
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

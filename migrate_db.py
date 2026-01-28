@@ -3,6 +3,12 @@
 Migration script to add missing columns to the matches table.
 This script safely adds columns that may be missing from an existing database.
 """
+
+#imports for the dotenv
+from dotenv import load_dotenv
+load_dotenv()
+
+
 from sqlalchemy import text, inspect
 from app.db.database import engine
 

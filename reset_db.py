@@ -1,3 +1,7 @@
+#imports for the dotenv
+from dotenv import load_dotenv
+load_dotenv()
+
 #imports for the database
 from app.db.database import Base, engine
 
