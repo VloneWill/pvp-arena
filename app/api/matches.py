@@ -13,7 +13,7 @@ from app.game.schemas import MatchOut, MatchEndRequest, ActionRequest, GameState
 from app.game.combat import (
     initialize_match,
     check_match_end,
-    engine,
+    CombatEngine,
     InvalidActionError,
     MatchNotActiveError,
 )
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 
 
 #create the get match history endpoint (MUST be before /{match_id} route)
-@router.get("/history", response_model=List[MatchOut])
+@router.get("/history")
 def match_history(
     limit: int = 25,
     offset: int = 0,
@@ -30,6 +30,9 @@ def match_history(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    from app.game.schemas import MatchHistoryItem
+    from app.db.models import User
+    
     q = db.query(Match).filter(
         or_(Match.player1_id == user_id, Match.player2_id == user_id)
     )
@@ -43,8 +46,39 @@ def match_history(
         .limit(limit)
         .all()
     )
-
-    return matches
+    
+    # Enrich matches with opponent info and result
+    history_items = []
+    for match in matches:
+        # Determine opponent
+        opponent_id = match.player2_id if match.player1_id == user_id else match.player1_id
+        opponent = db.query(User).filter(User.id == opponent_id).first()
+        
+        # Determine result
+        if match.status == "finished" and match.winner_id:
+            result = "WIN" if match.winner_id == user_id else "LOSS"
+        elif match.status == "canceled":
+            result = "CANCELED"
+        else:
+            result = "ACTIVE"
+        
+        # Build opponent info (class_name is required)
+        opponent_info = {
+            "username": opponent.username if opponent else f"Player {opponent_id}",
+            "class_name": opponent.class_name if opponent and opponent.class_name else "unknown",
+            "level": opponent.level if opponent else None,
+        }
+        
+        history_items.append({
+            "id": match.id,
+            "status": match.status,
+            "winner_id": match.winner_id,
+            "result": result,
+            "opponent": opponent_info,
+            "created_at": match.created_at.isoformat() if match.created_at else None,
+        })
+    
+    return history_items
 
 
 #create the get match endpoint
@@ -121,7 +155,7 @@ def forfeit_match(
     
     # Check match end to properly set winner
     from app.game.combat import check_match_end
-    check_match_end(match)
+    check_match_end(match, db)
     db.commit()
     db.refresh(match)
     return match
@@ -144,32 +178,61 @@ def get_game_state(
 
     # Initialize match if not already initialized (only if match hasn't started)
     if match.current_turn is None and match.turn_number == 0:
-        initialize_match(match)
+        initialize_match(match, db)
         db.commit()
         db.refresh(match)
 
     # Check for winner
-    winner_id = None
     if match.status == "active":
-        winner_id = check_match_end(match)
+        winner_id = check_match_end(match, db)
         if winner_id:
             db.commit()
             db.refresh(match)
 
+    # Ensure combat_log is initialized
+    if match.combat_log is None:
+        match.combat_log = []
+    
+    # Fetch player stats for both players
+    from app.db.models import User
+    from app.game.classes import get_max_hp
+    p1 = db.query(User).filter(User.id == match.player1_id).first()
+    p2 = db.query(User).filter(User.id == match.player2_id).first()
+    
+    from app.game.schemas import PlayerStats
+    p1_stats = PlayerStats(level=p1.level, xp=p1.xp, class_name=p1.class_name) if p1 else None
+    p2_stats = PlayerStats(level=p2.level, xp=p2.xp, class_name=p2.class_name) if p2 else None
+    
+    # Compute max HP consistently (single source of truth)
+    p1_max_hp = get_max_hp(p1) if p1 else 100
+    p2_max_hp = get_max_hp(p2) if p2 else 100
+    
+    # Clamp health values to never exceed max_hp (defensive guarantee)
+    p1_health = min(match.player1_health, p1_max_hp)
+    p2_health = min(match.player2_health, p2_max_hp)
+    
+    # Use match.winner_id as source of truth
     return GameStateOut(
         match_id=match.id,
         player1_id=match.player1_id,
         player2_id=match.player2_id,
-        player1_health=match.player1_health,
-        player2_health=match.player2_health,
+        player1_health=p1_health,
+        player2_health=p2_health,
+        player1_max_hp=p1_max_hp,
+        player2_max_hp=p2_max_hp,
         current_turn=match.current_turn,
         turn_number=match.turn_number,
         player1_defending=match.player1_defending,
         player2_defending=match.player2_defending,
         player1_ability_effect=match.player1_ability_effect,
         player2_ability_effect=match.player2_ability_effect,
+        player1_ability_cooldown=match.player1_ability_cooldown,
+        player2_ability_cooldown=match.player2_ability_cooldown,
         status=match.status,
-        winner_id=winner_id,
+        winner_id=match.winner_id,
+        combat_log=match.combat_log or [],
+        player1_stats=p1_stats,
+        player2_stats=p2_stats,
     )
 
 #create the take action endpoint
@@ -189,10 +252,13 @@ def take_action(
 
     # Initialize match if not already initialized (only if match hasn't started)
     if match.current_turn is None and match.turn_number == 0:
-        initialize_match(match)
+        initialize_match(match, db)
 
     is_player1 = user_id == match.player1_id
     opponent_id = match.player2_id if is_player1 else match.player1_id
+
+    # Create engine instance with db session
+    engine = CombatEngine(db)
 
     try:
         if payload.action == "attack":
@@ -207,10 +273,10 @@ def take_action(
             result = engine.heal(match, player_id=user_id)
             result["actor_id"] = user_id
             result["opponent_id"] = opponent_id
-        elif payload.action == "double_attack":
-            result = engine.double_attack(match, player_id=user_id)
-            result["attacker_id"] = user_id
-            result["defender_id"] = opponent_id
+        elif payload.action in ("power_strike", "arcane_blast", "rejuvenate"):
+            result = engine.class_ability(match, player_id=user_id)
+            result["actor_id"] = user_id
+            result["opponent_id"] = opponent_id
         else:
             raise InvalidActionError(f"Unknown action: {payload.action}")
     except MatchNotActiveError as exc:
@@ -223,8 +289,29 @@ def take_action(
     db.commit()
     db.refresh(match)
 
-    winner_id = result.get("winner_id")
+    # Ensure combat_log is initialized
+    if match.combat_log is None:
+        match.combat_log = []
 
+    # Fetch player stats for both players
+    from app.db.models import User
+    from app.game.classes import get_max_hp
+    p1 = db.query(User).filter(User.id == match.player1_id).first()
+    p2 = db.query(User).filter(User.id == match.player2_id).first()
+    
+    from app.game.schemas import PlayerStats
+    p1_stats = PlayerStats(level=p1.level, xp=p1.xp, class_name=p1.class_name) if p1 else None
+    p2_stats = PlayerStats(level=p2.level, xp=p2.xp, class_name=p2.class_name) if p2 else None
+
+    # Compute max HP consistently (single source of truth)
+    p1_max_hp = get_max_hp(p1) if p1 else 100
+    p2_max_hp = get_max_hp(p2) if p2 else 100
+    
+    # Clamp health values to never exceed max_hp (defensive guarantee)
+    p1_health = min(match.player1_health, p1_max_hp)
+    p2_health = min(match.player2_health, p2_max_hp)
+
+    # Use match.winner_id as source of truth (set by check_match_end)
     return {
         "action": payload.action,
         "result": result,
@@ -232,15 +319,22 @@ def take_action(
             match_id=match.id,
             player1_id=match.player1_id,
             player2_id=match.player2_id,
-            player1_health=match.player1_health,
-            player2_health=match.player2_health,
+            player1_health=p1_health,
+            player2_health=p2_health,
+            player1_max_hp=p1_max_hp,
+            player2_max_hp=p2_max_hp,
             current_turn=match.current_turn,
             turn_number=match.turn_number,
             player1_defending=match.player1_defending,
             player2_defending=match.player2_defending,
             player1_ability_effect=match.player1_ability_effect,
             player2_ability_effect=match.player2_ability_effect,
+            player1_ability_cooldown=match.player1_ability_cooldown,
+            player2_ability_cooldown=match.player2_ability_cooldown,
             status=match.status,
-            winner_id=winner_id,
+            winner_id=match.winner_id,
+            combat_log=match.combat_log or [],
+            player1_stats=p1_stats,
+            player2_stats=p2_stats,
         ),
     }

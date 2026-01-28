@@ -1,19 +1,31 @@
-export default function HeaderBar({ username, showHistory, onToggleHistory, onLogout }) {
+import ProfileChip from "./ProfileChip";
+
+export default function HeaderBar({ username, className, level, showHistory, onToggleHistory, onLogout }) {
   return (
-    <div style={{ 
-      display: "flex", 
-      justifyContent: "space-between", 
-      alignItems: "center",
-      padding: "16px 20px",
-      backgroundColor: "#1e1e1e",
-      borderRadius: 8,
-      border: "1px solid #333",
-      marginBottom: 20
-    }}>
-      <div style={{ color: "white" }}>
-        Logged in as <b style={{ color: "#4a9eff" }}>{username}</b>
+    <div style={{ display: "grid", gap: 12, maxWidth: 1000, margin: "0 auto 20px auto" }}>
+      {/* Profile Header - separate box, centered */}
+      <div style={{ 
+        display: "flex", 
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "12px 20px",
+        backgroundColor: "#1e1e1e",
+        borderRadius: 8,
+        border: "1px solid #333"
+      }}>
+        <ProfileChip username={username} className={className} level={level} />
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      
+      {/* Action Buttons - separate box, centered */}
+      <div style={{ 
+        display: "flex", 
+        justifyContent: "center",
+        gap: 8,
+        padding: "8px 20px",
+        backgroundColor: "#1e1e1e",
+        borderRadius: 8,
+        border: "1px solid #333"
+      }}>
         <button 
           onClick={onToggleHistory}
           style={{
@@ -23,7 +35,8 @@ export default function HeaderBar({ username, showHistory, onToggleHistory, onLo
             border: "1px solid #4a5568",
             borderRadius: 6,
             cursor: "pointer",
-            fontWeight: "bold"
+            fontWeight: "bold",
+            fontSize: "14px"
           }}
         >
           {showHistory ? "Hide" : "Show"} History
@@ -37,7 +50,8 @@ export default function HeaderBar({ username, showHistory, onToggleHistory, onLo
             border: "none",
             borderRadius: 6,
             cursor: "pointer",
-            fontWeight: "bold"
+            fontWeight: "bold",
+            fontSize: "14px"
           }}
         >
           Logout

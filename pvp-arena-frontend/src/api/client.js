@@ -25,8 +25,23 @@ export async function apiFetch(path, { method = "GET", token, body } = {}) {
   }
 
   if (!res.ok) {
-    const detail =
-      (data && data.detail) ? data.detail : `HTTP ${res.status}`;
+    let detail = `HTTP ${res.status}`;
+    
+    if (data && data.detail) {
+      // Handle FastAPI validation errors (422) - detail is an array
+      if (Array.isArray(data.detail)) {
+        const messages = data.detail.map(err => {
+          const field = err.loc && err.loc.length > 1 ? err.loc[err.loc.length - 1] : 'field';
+          return `${field}: ${err.msg}`;
+        });
+        detail = messages.join('; ');
+      } else if (typeof data.detail === 'string') {
+        detail = data.detail;
+      } else {
+        detail = JSON.stringify(data.detail);
+      }
+    }
+    
     const err = new Error(detail);
     err.status = res.status;
     err.data = data;

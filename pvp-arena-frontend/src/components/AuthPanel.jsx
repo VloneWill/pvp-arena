@@ -1,4 +1,4 @@
-export default function AuthPanel({ mode, setMode, username, setUsername, password, setPassword, onLogin, onRegister, error }) {
+export default function AuthPanel({ mode, setMode, username, setUsername, password, setPassword, className, setClassName, onLogin, onRegister, error }) {
   return (
     <div style={{ 
       display: "grid", 
@@ -50,14 +50,16 @@ export default function AuthPanel({ mode, setMode, username, setUsername, passwo
         <input 
           value={username} 
           onChange={(e) => setUsername(e.target.value)} 
-          style={{ 
+          style={{
             width: "100%",
+            boxSizing: "border-box",
             padding: "10px",
             backgroundColor: "#2d3748",
             color: "white",
             border: "1px solid #4a5568",
             borderRadius: 6
-          }} 
+          }}
+           
         />
       </label>
 
@@ -67,21 +69,50 @@ export default function AuthPanel({ mode, setMode, username, setUsername, passwo
           type="password" 
           value={password} 
           onChange={(e) => setPassword(e.target.value)} 
-          style={{ 
+          style={{
             width: "100%",
+            boxSizing: "border-box",
             padding: "10px",
             backgroundColor: "#2d3748",
             color: "white",
             border: "1px solid #4a5568",
             borderRadius: 6
-          }} 
+          }}
+          
         />
       </label>
+
+      {mode === "register" && (
+        <label style={{ color: "white", display: "flex", flexDirection: "column", gap: 4 }}>
+          Class <span style={{ color: "#ff6b6b" }}>*</span>
+          <select
+            value={className || ""}
+            onChange={(e) => setClassName(e.target.value)}
+            required
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "10px",
+              backgroundColor: "#2d3748",
+              color: "white",
+              border: "1px solid #4a5568",
+              borderRadius: 6
+            }}
+            
+          >
+            <option value="">Select a class</option>
+            <option value="warrior">⚔️ Warrior - High HP, Strong Attacks</option>
+            <option value="mage">🔮 Mage - High Damage, Lower HP</option>
+            <option value="druid">🌿 Druid - Balanced, Strong Heals</option>
+          </select>
+        </label>
+      )}
 
       {mode === "login" ? (
         <button 
           onClick={onLogin}
           style={{
+            width: "100%",
             padding: "12px 24px",
             backgroundColor: "#28a745",
             color: "white",
@@ -98,6 +129,7 @@ export default function AuthPanel({ mode, setMode, username, setUsername, passwo
         <button 
           onClick={onRegister}
           style={{
+            width: "100%",
             padding: "12px 24px",
             backgroundColor: "#28a745",
             color: "white",

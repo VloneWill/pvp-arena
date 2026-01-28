@@ -43,7 +43,45 @@ function HealthBar({ current, max, isActive, flashColor }) {
   );
 }
 
-export default function PlayerCard({ playerId, username, health, maxHealth, isActive, isMe, flashColor }) {
+// XP Bar component
+function XPBar({ current, level }) {
+  const xpNeeded = 100 * level;
+  const percentage = Math.min(100, (current / xpNeeded) * 100);
+  
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: "11px", color: "#999", marginBottom: 2 }}>
+        Level {level} • {current} / {xpNeeded} XP
+      </div>
+      <div
+        style={{
+          width: "100%",
+          height: 6,
+          backgroundColor: "#2d3748",
+          borderRadius: 3,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${percentage}%`,
+            height: "100%",
+            backgroundColor: "#9c27b0",
+            transition: "width 0.3s ease",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function getClassEmoji(className) {
+  if (!className) return "";
+  const emojis = { warrior: "⚔️", mage: "🔮", druid: "🌿" };
+  return emojis[className] || "";
+}
+
+export default function PlayerCard({ playerId, username, health, maxHealth, isActive, isMe, flashColor, className, level, xp }) {
   return (
     <div
       style={{
@@ -58,8 +96,14 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div>
-          <div style={{ fontWeight: "bold", fontSize: "18px", color: "white" }}>{username || `Player ${playerId}`}</div>
-          <div style={{ fontSize: "12px", color: "#999" }}>{isMe ? "You" : "Opponent"}</div>
+          <div style={{ fontWeight: "bold", fontSize: "18px", color: "white" }}>
+            {username || `Player ${playerId}`}
+          </div>
+          <div style={{ fontSize: "12px", color: "#999" }}>
+            {isMe ? "You" : "Opponent"}
+            {className && ` • ${getClassEmoji(className)} ${className.charAt(0).toUpperCase() + className.slice(1)}`}
+            {level && ` Lv.${level}`}
+          </div>
         </div>
         {isActive && (
           <div style={{ 
@@ -75,6 +119,7 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
         )}
       </div>
       <HealthBar current={health} max={maxHealth} isActive={isActive} flashColor={flashColor} />
+      {level && xp !== undefined && <XPBar current={xp} level={level} />}
     </div>
   );
 }

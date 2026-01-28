@@ -43,7 +43,7 @@ def join_queue(
     db.add(match)
     db.commit()
     db.refresh(match)
-    initialize_match(match)
+    initialize_match(match, db)
     db.commit()
     db.refresh(match)
 

@@ -19,26 +19,31 @@ export function buildCombatMessage(result, meId, usernameMap) {
     return usernameMap[userId] || `Player ${userId}`;
   };
 
-  if (action === "attack" || action === "double_attack") {
+  if (action === "attack" || action === "power_strike" || action === "arcane_blast") {
     const dmg = result.damage ?? 0;
     const defended = result.defended === true;
     const attackerId = result.attacker_id;
-    const defenderId = result.defender_id;
+    // defender_id might be missing for some actions, try opponent_id as fallback
+    const defenderId = result.defender_id || result.opponent_id;
     const attackerName = getDisplayName(attackerId);
-    const defenderName = getDisplayName(defenderId);
+    // If defenderId is still missing, try to infer from context
+    const defenderName = defenderId ? getDisplayName(defenderId) : "Opponent";
     const extra = defended ? " (blocked, reduced damage)" : "";
-    const attackType = action === "double_attack" ? " with a powerful double attack" : "";
+    let attackType = "";
+    if (action === "power_strike") attackType = " with Power Strike";
+    else if (action === "arcane_blast") attackType = " with Arcane Blast";
     return { 
       message: `${attackerName} dealt ${dmg} damage to ${defenderName}${attackType}${extra}.`, 
       tone: "damage" 
     };
   }
 
-  if (action === "heal") {
+  if (action === "heal" || action === "rejuvenate") {
     const healed = result.healed ?? 0;
     const actorId = result.actor_id;
     const actorName = getDisplayName(actorId);
-    return { message: `${actorName} healed for ${healed} HP.`, tone: "heal" };
+    const abilityName = action === "rejuvenate" ? " with Rejuvenate" : "";
+    return { message: `${actorName} healed for ${healed} HP${abilityName}.`, tone: "heal" };
   }
 
   if (action === "defend") {
