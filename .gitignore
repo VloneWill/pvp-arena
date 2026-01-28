@@ -1,6 +1,8 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # Virtual environment
 .venv/
@@ -8,9 +10,14 @@ __pycache__/
 # Environment variables
 .env
 
-# SQLite
+# Databases
 *.db
+*.sqlite3
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
 
 # IDE
 .vscode/
-
