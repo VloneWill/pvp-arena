@@ -1,55 +1,116 @@
-## Architecture overview
+# PvP Arena Backend
 
-This project is a small FastAPI-based PvP arena backend with three main layers:
+A turn-based PvP arena backend built with FastAPI, featuring JWT authentication,
+matchmaking, and a fully isolated combat engine with comprehensive test coverage.
 
-- **API layer (`app/api/`)**: FastAPI routers for auth, matchmaking, and matches. These endpoints are intentionally thin and delegate all game logic to the combat and queue engines.
-- **Domain / engine layer (`app/game/`)**: Pure Python game logic:
-  - `engine.py` contains the in-memory `MatchmakingQueue` used to pair players into matches.
-  - `combat.py` contains the low-level combat primitives and the high-level `CombatEngine` that enforces turn order, match state, and action validity.
-- **Persistence layer (`app/db/`)**: SQLAlchemy models and database session management for `User` and `Match` records.
+This project is designed to showcase clean backend architecture, domain-driven
+game logic, and testable systems rather than frontend or UI concerns.
 
-This separation keeps HTTP concerns (serialization, auth, status codes) out of the core game rules and makes it easy to evolve the game independently of the transport.
+Status: Actively under development.
 
-## Why the combat engine is isolated
+---
 
-The `CombatEngine` in `app/game/combat.py` is designed to be:
+## Architecture Overview
 
-- **Deterministic and side-effect free (aside from mutating `Match`)**: It works purely in terms of `Match` entities and random damage rolls, with no knowledge of FastAPI, HTTP, or the database session lifecycle.
-- **The single source of truth for rules**: Turn enforcement, “dead players cannot act”, “wrong player cannot act”, and “no actions after a finished match” all live in one place. The API layer simply catches `InvalidActionError` / `MatchNotActiveError` and translates them into HTTP errors.
-- **Easy to test**: Unit tests in `app/tests/test_combat.py` exercise the engine directly without going through HTTP, so rules remain well-specified even if the API routes change.
+This project is a FastAPI-based PvP arena backend organized into three primary layers.
 
-By isolating the engine, you avoid duplicated rule logic in multiple endpoints and reduce the chance that the API and the game rules drift apart over time.
+### API Layer (app/api/)
+- FastAPI routers for authentication, matchmaking, and matches
+- Endpoints are intentionally thin and delegate all game logic to the domain layer
+- Responsible only for request validation, authentication, and HTTP responses
 
-## Testing strategy
+### Domain / Engine Layer (app/game/)
+Pure Python game logic with no FastAPI or database coupling:
+- engine.py: In-memory MatchmakingQueue used to pair players into matches
+- combat.py: Low-level combat primitives and the high-level CombatEngine that
+  enforces turn order, match state, and action validity
 
-The test suite covers three layers:
+### Persistence Layer (app/db/)
+- SQLAlchemy models and database session management
+- Stores User and Match records
+- Cleanly separated from both HTTP and combat logic
 
-- **Unit tests for combat logic** (`app/tests/test_combat.py`):
-  - Validate attacks, defense, healing, health bounds, double-attack behavior, turn switching, and “cannot act when match is over / not your turn / dead”.
-  - Use the low-level functions and `CombatEngine` directly.
-- **Unit tests for matchmaking queue** (`app/tests/test_queue.py`):
-  - Verify join/leave behavior, no duplicates, FIFO pairing, and queue order after operations.
-- **End-to-end API tests** (`app/tests/test_api_flow.py`):
-  - Use `TestClient` with an in-memory SQLite DB (via `conftest.py` and overridden `get_db`).
-  - Exercise `/auth/register`, `/auth/login`, `/matchmaking/join`, `/matches/{id}/action`, and `/matches/{id}/state` with real auth headers and controlled randomness using `monkeypatch`.
+This separation keeps HTTP concerns (serialization, authentication, status codes)
+out of the core game rules and allows the game logic to evolve independently of
+the API layer.
 
-To run the tests locally:
+---
 
-```bash
+## Why the Combat Engine Is Isolated
+
+The CombatEngine in app/game/combat.py is designed to be:
+
+- Deterministic and side-effect free (aside from mutating Match state)
+  It operates purely on domain entities and controlled randomness, with no
+  knowledge of FastAPI, HTTP, or database session lifecycles.
+
+- The single source of truth for rules
+  Turn enforcement, invalid actions (wrong player, dead player), and
+  no actions after match completion are all centralized in one place.
+  The API layer simply catches domain errors and translates them into HTTP responses.
+
+- Easy to test
+  Unit tests exercise the engine directly without going through HTTP,
+  ensuring that game rules remain correct even as API routes evolve.
+
+This approach avoids duplicated rule logic across endpoints and reduces the risk
+of the API and the game rules drifting apart over time.
+
+---
+
+## Testing Strategy
+
+The project uses a layered testing approach to ensure correctness at both the
+game-rule level and the API integration level.
+
+### Combat Engine Tests (app/tests/test_combat.py)
+- Validate attacks, defense, healing, and health bounds
+- Enforce turn switching and action order
+- Ensure players cannot act when it is not their turn, when dead, or after a match ends
+- Test the CombatEngine and low-level combat functions directly
+
+### Matchmaking Queue Tests (app/tests/test_queue.py)
+- Verify join and leave behavior
+- Prevent duplicate queue entries
+- Ensure FIFO pairing logic
+- Validate queue state after operations
+
+### End-to-End API Flow Tests (app/tests/test_api_flow.py)
+- Use FastAPI TestClient with an in-memory SQLite database
+- Override dependencies via conftest.py
+- Exercise full flows:
+  - /auth/register
+  - /auth/login
+  - /matchmaking/join
+  - /matches/{id}/action
+  - /matches/{id}/state
+- Use controlled randomness via monkeypatch to make combat deterministic
+
+---
+
+## Running Tests
+
 pytest -v
-```
 
-### Test coverage
+Optional coverage:
 
-If you enable `pytest-cov`, you can run:
-
-```bash
 pytest --cov=app --cov-report=term-missing
-```
 
-And add a badge like this to the top of the README (replace the URL with your actual CI/coverage provider):
+---
 
-```markdown
-![coverage](https://img.shields.io/badge/coverage-XX%25-brightgreen)
-```
+## Running Locally
 
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+
+The API will be available at:
+http://127.0.0.1:8000/docs
+
+---
+
+## Future Work
+
+- Class-based combat roles (Warrior, Mage, Druid)
+- Experience and leveling system
+- Persistent matchmaking queues
+- Expanded combat actions and status effects
