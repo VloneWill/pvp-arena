@@ -176,57 +176,57 @@ class TestAPIFullFlow:
             assert me2_after["xp"] == xp2_before + 50
 
     def test_arcane_blast_damage_balanced(self, client, monkeypatch):
-        """Test that Arcane Blast damage is balanced (1.4x multiplier) and stronger than Power Strike."""
+        """Test that Arcane Blast damage is balanced (1.5x multiplier) and stronger than Power Strike."""
         import app.game.combat as combat
         # Set deterministic damage
         monkeypatch.setattr(combat.random, "randint", lambda a, b: 20)
 
-        h1 = auth_headers(client, "user1", class_name="mage")
-        h2 = auth_headers(client, "user2", class_name="warrior")
+        h_mage = auth_headers(client, "user1", class_name="mage")
+        h_warrior = auth_headers(client, "user2", class_name="warrior")
 
-        client.post("/matchmaking/join", headers=h1)
-        r = client.post("/matchmaking/join", headers=h2)
+        client.post("/matchmaking/join", headers=h_mage)
+        r = client.post("/matchmaking/join", headers=h_warrior)
         match_id = r.json()["match"]["id"]
 
-        # Get match to determine player order
-        match_data = client.get(f"/matches/{match_id}", headers=h1).json()
-        id1 = my_user_id(client, h1)
+        # Get match state to determine player order and turn
+        match_state = client.get(f"/matches/{match_id}/state", headers=h_mage).json()
+        mage_id = my_user_id(client, h_mage)
+        warrior_id = my_user_id(client, h_warrior)
         
-        if match_data["player1_id"] == id1:
-            p1_headers = h1
-            p2_headers = h2
-        else:
-            p1_headers = h2
-            p2_headers = h1
-
-        # Use Arcane Blast (should be 1.4x damage, so 20 * 1.4 = 28)
-        r_action = client.post(f"/matches/{match_id}/action", headers=p1_headers, json={"action": "arcane_blast"})
+        # Determine whose turn it is and ensure mage can act
+        # If warrior's turn first, have them pass
+        if match_state["current_turn"] == warrior_id:
+            client.post(f"/matches/{match_id}/action", headers=h_warrior, json={"action": "attack"})
+        
+        # Use Arcane Blast with mage headers (should be 1.5x damage, so 20 * 1.5 = 30)
+        r_action = client.post(f"/matches/{match_id}/action", headers=h_mage, json={"action": "arcane_blast"})
         assert r_action.status_code == 200
         
         result = r_action.json()["result"]
         arcane_damage = result["damage"]
-        # Arcane Blast should deal ~28 damage (20 base * 1.4 multiplier)
-        assert 26 <= arcane_damage <= 30
+        # Arcane Blast should deal ~30 damage (20 base * 1.5 multiplier)
+        assert 28 <= arcane_damage <= 32
 
-        # Now test Power Strike (should be weaker, 1.25x damage, so 20 * 1.25 = 25)
+        # Now test Power Strike (should be weaker, 1.2x damage, so 20 * 1.2 = 24)
         # Reset match state by creating a new match
-        client.post("/matchmaking/join", headers=h1)
-        r2 = client.post("/matchmaking/join", headers=h2)
+        client.post("/matchmaking/join", headers=h_mage)
+        r2 = client.post("/matchmaking/join", headers=h_warrior)
         match_id2 = r2.json()["match"]["id"]
-        match_data2 = client.get(f"/matches/{match_id2}", headers=h1).json()
+        match_state2 = client.get(f"/matches/{match_id2}/state", headers=h_mage).json()
         
-        if match_data2["player1_id"] == id1:
-            p1_headers2 = h1
-        else:
-            p1_headers2 = h2
-
-        r_action2 = client.post(f"/matches/{match_id2}/action", headers=p1_headers2, json={"action": "power_strike"})
+        # Determine whose turn it is and ensure warrior can act
+        # If mage's turn first, have them pass
+        if match_state2["current_turn"] == mage_id:
+            client.post(f"/matches/{match_id2}/action", headers=h_mage, json={"action": "attack"})
+        
+        # Use warrior headers for warrior actions
+        r_action2 = client.post(f"/matches/{match_id2}/action", headers=h_warrior, json={"action": "power_strike"})
         assert r_action2.status_code == 200
         
         result2 = r_action2.json()["result"]
         power_strike_damage = result2["damage"]
-        # Power Strike should deal ~25 damage (20 base * 1.25 multiplier)
-        assert 23 <= power_strike_damage <= 27
+        # Power Strike should deal ~24 damage (20 base * 1.2 multiplier)
+        assert 22 <= power_strike_damage <= 26
         
         # Arcane Blast should be stronger than Power Strike
         assert arcane_damage > power_strike_damage
@@ -257,32 +257,32 @@ class TestAPIFullFlow:
         r1 = client.post(f"/matches/{match_id}/action", headers=p1_headers, json={"action": "power_strike"})
         assert r1.status_code == 200
         state1 = r1.json()["game_state"]
-        # Cooldown should be set (3 turns)
+        # Cooldown should be set to 3, but after turn advances it becomes 2
         cooldown1 = state1["player1_ability_cooldown"] if match_data["player1_id"] == id1 else state1["player2_ability_cooldown"]
-        assert cooldown1 == 3
+        assert cooldown1 == 2  # 3 - 1 (decremented when turn advanced)
 
         # Player 2 acts
         client.post(f"/matches/{match_id}/action", headers=p2_headers, json={"action": "attack"})
         
-        # Player 1's turn again - cooldown should still be 3 (only decrements when player 1's turn ends)
+        # Player 1's turn again - cooldown should still be 2 (only decrements when player 1's turn ends)
         state2 = client.get(f"/matches/{match_id}/state", headers=p1_headers).json()
         cooldown2 = state2["player1_ability_cooldown"] if match_data["player1_id"] == id1 else state2["player2_ability_cooldown"]
-        assert cooldown2 == 3  # Cooldown doesn't decrease on opponent's turn
+        assert cooldown2 == 2  # Cooldown doesn't decrease on opponent's turn
 
         # Try to use ability again - should fail
         r_fail = client.post(f"/matches/{match_id}/action", headers=p1_headers, json={"action": "power_strike"})
         assert r_fail.status_code == 400  # Should be blocked by cooldown
         
-        # Player 1 acts (any action) - this ends their turn, cooldown should decrement to 2
+        # Player 1 acts (any action) - this ends their turn, cooldown should decrement to 1
         client.post(f"/matches/{match_id}/action", headers=p1_headers, json={"action": "attack"})
         
         # Player 2 acts
         client.post(f"/matches/{match_id}/action", headers=p2_headers, json={"action": "attack"})
         
-        # Player 1's turn again - cooldown should be 2 now (decremented when player 1's turn ended)
+        # Player 1's turn again - cooldown should be 1 now (decremented when player 1's turn ended)
         state3 = client.get(f"/matches/{match_id}/state", headers=p1_headers).json()
         cooldown3 = state3["player1_ability_cooldown"] if match_data["player1_id"] == id1 else state3["player2_ability_cooldown"]
-        assert cooldown3 == 2
+        assert cooldown3 == 1
 
     # Note: Database wipe test would require testing against actual SQLite file
     # This is better tested manually or as an integration test since unit tests use in-memory DB

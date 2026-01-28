@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy.orm import Session
 
 from app.game.combat import (
     initialize_match,
@@ -11,54 +12,76 @@ from app.game.combat import (
     InvalidActionError,
     CombatEngine,
 )
-from app.db.models import Match
+from app.db.models import Match, User
 
 
-def make_match():
+def make_match(db_session: Session, player1_class: str = "warrior", player2_class: str = "warrior"):
+    """Create a match with two users in the database."""
+    # Create users
+    user1 = User(username=f"player1_{player1_class}", password_hash="hash", class_name=player1_class, level=1)
+    user2 = User(username=f"player2_{player2_class}", password_hash="hash", class_name=player2_class, level=1)
+    db_session.add(user1)
+    db_session.add(user2)
+    db_session.commit()
+    db_session.refresh(user1)
+    db_session.refresh(user2)
+    
+    # Create match
     match = Match(
-        player1_id=1,
-        player2_id=2,
+        player1_id=user1.id,
+        player2_id=user2.id,
         status="active",
     )
-    initialize_match(match, db=None)
+    db_session.add(match)
+    db_session.commit()
+    db_session.refresh(match)
+    
+    initialize_match(match, db_session)
+    db_session.commit()
+    db_session.refresh(match)
+    
     return match
 
 
 class TestAttacks:
-    def test_attack_reduces_health(self):
-        match = make_match()
+    def test_attack_reduces_health(self, db_session):
+        match = make_match(db_session)
 
         result = process_attack(
             match=match,
-            attacker_id=1,
-            defender_id=2,
-            db=None,
+            attacker_id=match.player1_id,
+            defender_id=match.player2_id,
+            db=db_session,
         )
 
         assert result["action"] == "attack"
-        assert match.player2_health < 100
+        # Health should be reduced from max HP (class-based, not necessarily 100)
+        from app.game.classes import get_max_hp
+        user2 = db_session.query(User).filter(User.id == match.player2_id).first()
+        max_hp2 = get_max_hp(user2)
+        assert match.player2_health < max_hp2
 
 
 class TestDefense:
-    def test_defend_reduces_damage(self):
-        match = make_match()
+    def test_defend_reduces_damage(self, db_session):
+        match = make_match(db_session)
 
-        process_defend(match, player_id=2)
+        process_defend(match, match.player2_id, db_session)
         before = match.player2_health
 
-        process_attack(match, attacker_id=1, defender_id=2, db=None)
+        process_attack(match, attacker_id=match.player1_id, defender_id=match.player2_id, db=db_session)
 
         after = match.player2_health
         assert before - after <= 10  # reduced damage
 
-    def test_defend_flag_clears_after_hit(self):
-        match = make_match()
+    def test_defend_flag_clears_after_hit(self, db_session):
+        match = make_match(db_session)
 
         # Player2 defends, then gets hit once
-        process_defend(match, player_id=2)
+        process_defend(match, match.player2_id, db_session)
         assert match.player2_defending is True
 
-        process_attack(match, attacker_id=1, defender_id=2, db=None)
+        process_attack(match, attacker_id=match.player1_id, defender_id=match.player2_id, db=db_session)
 
         # Defender flag should clear, attacker flag should remain False
         assert match.player2_defending is False
@@ -66,72 +89,92 @@ class TestDefense:
 
 
 class TestHealing:
-    def test_heal_caps_at_max_hp(self):
-        match = make_match()
+    def test_heal_caps_at_max_hp(self, db_session):
+        match = make_match(db_session)
         match.player1_health = 95
+        db_session.commit()
 
-        result = process_heal(match, player_id=1, db=None)
+        result = process_heal(match, player_id=match.player1_id, db=db_session)
 
-        # Heal should cap at max HP (100 for default, or class-based max)
-        assert result["new_health"] <= 100  # May be less if class-based max is lower
+        # Heal should cap at max HP (class-based max)
+        from app.game.classes import get_max_hp
+        user = db_session.query(User).filter(User.id == match.player1_id).first()
+        max_hp = get_max_hp(user)
+        assert result["new_health"] <= max_hp
 
 
 # Double Attack removed - class abilities replace it
 
 
 class TestMatchEnd:
-    def test_match_ends_when_health_zero(self):
-        match = make_match()
+    def test_match_ends_when_health_zero(self, db_session):
+        match = make_match(db_session)
         match.player2_health = 1
+        db_session.commit()
 
-        process_attack(match, attacker_id=1, defender_id=2, db=None)
-        winner = check_match_end(match, db=None)
+        process_attack(match, attacker_id=match.player1_id, defender_id=match.player2_id, db=db_session)
+        winner = check_match_end(match, db_session)
 
-        assert winner == 1
+        assert winner == match.player1_id
         assert match.status == "finished"
-        assert match.winner_id == 1  # Test winner_id is set
+        assert match.winner_id == match.player1_id  # Test winner_id is set
 
-    def test_health_never_below_zero(self):
-        match = make_match()
+    def test_health_never_below_zero(self, db_session):
+        match = make_match(db_session)
         match.player2_health = 5
+        db_session.commit()
 
         # Large number of attacks, health should clamp at 0
         for _ in range(10):
-            process_attack(match, attacker_id=1, defender_id=2, db=None)
+            process_attack(match, attacker_id=match.player1_id, defender_id=match.player2_id, db=db_session)
             assert match.player2_health >= 0
 
 
 class TestTurns:
-    def test_turn_switches_after_an_action(self):
-        match = make_match()
-        # Note: CombatEngine now requires db session, so this test needs updating
-        # For now, skip this test or update it to use a mock db
-        pass
+    def test_turn_switches_after_an_action(self, db_session):
+        match = make_match(db_session)
+        engine = CombatEngine(db_session)
+        
+        initial_turn = match.current_turn
+        engine.attack(match, attacker_id=match.player1_id, defender_id=match.player2_id)
+        
+        assert match.current_turn != initial_turn
+        assert match.current_turn == match.player2_id
 
-    def test_cannot_act_when_match_is_over(self):
-        match = make_match()
+    def test_cannot_act_when_match_is_over(self, db_session):
+        match = make_match(db_session)
         match.status = "finished"
+        db_session.commit()
 
         with pytest.raises(MatchNotActiveError):
-            process_attack(match, attacker_id=1, defender_id=2, db=None)
+            process_attack(match, attacker_id=match.player1_id, defender_id=match.player2_id, db=db_session)
 
-    def test_wrong_player_cannot_act(self):
-        match = make_match()
-        # Note: CombatEngine now requires db session
-        # This test needs updating to use a mock db or skip
-        pass
+    def test_wrong_player_cannot_act(self, db_session):
+        match = make_match(db_session)
+        engine = CombatEngine(db_session)
+        
+        # Try to have player2 act when it's player1's turn
+        with pytest.raises(InvalidActionError):
+            engine.attack(match, attacker_id=match.player2_id, defender_id=match.player1_id)
 
-    def test_player_cannot_act_twice_in_a_row(self):
-        match = make_match()
-        # Note: CombatEngine now requires db session
-        # This test needs updating to use a mock db or skip
-        pass
+    def test_player_cannot_act_twice_in_a_row(self, db_session):
+        match = make_match(db_session)
+        engine = CombatEngine(db_session)
+        
+        # Player1 acts
+        engine.attack(match, attacker_id=match.player1_id, defender_id=match.player2_id)
+        
+        # Player1 tries to act again (should fail)
+        with pytest.raises(InvalidActionError):
+            engine.attack(match, attacker_id=match.player1_id, defender_id=match.player2_id)
 
-    def test_dead_player_cannot_act(self):
-        match = make_match()
-        # Note: CombatEngine now requires db session
-        # This test needs updating to use a mock db or skip
-        pass
+    def test_dead_player_cannot_act(self, db_session):
+        match = make_match(db_session)
+        match.player1_health = 0
+        db_session.commit()
+
+        with pytest.raises(InvalidActionError):
+            process_attack(match, attacker_id=match.player1_id, defender_id=match.player2_id, db=db_session)
 
 
 class TestClassBalance:
@@ -263,12 +306,11 @@ class TestHPAlignment:
         assert data["player1_health"] <= data["player1_max_hp"], "Player1 health should never exceed max_hp"
         assert data["player2_health"] <= data["player2_max_hp"], "Player2 health should never exceed max_hp"
     
-    def test_state_endpoint_never_returns_health_exceeding_max_hp(self, client):
+    def test_state_endpoint_never_returns_health_exceeding_max_hp(self, client, db_session):
         """Verify state endpoint clamps health to max_hp."""
         from app.tests.helpers import auth_headers
         from app.game.classes import get_max_hp
         from app.db.models import User, Match
-        from app.db.database import get_db
         from app.game.combat import initialize_match
         
         # Create users
@@ -286,28 +328,23 @@ class TestHPAlignment:
         r = client.post("/matchmaking/join", headers=h2)
         match_id = r.json()["match"]["id"]
         
-        # Get database session to manually manipulate health
-        db_gen = get_db()
-        db = next(db_gen)
-        try:
-            match = db.query(Match).filter(Match.id == match_id).first()
-            initialize_match(match, db)
-            
-            # Manually set health to exceed max_hp (simulating legacy data bug)
-            user1_obj = User(id=user1_id, class_name="warrior", level=1)
-            user2_obj = User(id=user2_id, class_name="mage", level=1)
-            warrior_max = get_max_hp(user1_obj)
-            mage_max = get_max_hp(user2_obj)
-            
-            if match.player1_id == user1_id:
-                match.player1_health = warrior_max + 50  # Exceeds max
-                match.player2_health = mage_max + 30  # Exceeds max
-            else:
-                match.player2_health = warrior_max + 50
-                match.player1_health = mage_max + 30
-            db.commit()
-        finally:
-            db.close()
+        # Use db_session fixture to manually manipulate health
+        match = db_session.query(Match).filter(Match.id == match_id).first()
+        initialize_match(match, db_session)
+        
+        # Manually set health to exceed max_hp (simulating legacy data bug)
+        user1_obj = db_session.query(User).filter(User.id == user1_id).first()
+        user2_obj = db_session.query(User).filter(User.id == user2_id).first()
+        warrior_max = get_max_hp(user1_obj)
+        mage_max = get_max_hp(user2_obj)
+        
+        if match.player1_id == user1_id:
+            match.player1_health = warrior_max + 50  # Exceeds max
+            match.player2_health = mage_max + 30  # Exceeds max
+        else:
+            match.player2_health = warrior_max + 50
+            match.player1_health = mage_max + 30
+        db_session.commit()
         
         # Get state
         response = client.get(f"/matches/{match_id}/state", headers=h1)
