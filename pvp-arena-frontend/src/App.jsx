@@ -12,8 +12,8 @@ import MatchHistory from "./components/MatchHistory";
 
 export default function App() {
   const [mode, setMode] = useState("login");
-  const [username, setUsername] = useState("user1");
-  const [password, setPassword] = useState("password123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [className, setClassName] = useState("");
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [me, setMe] = useState(null);
