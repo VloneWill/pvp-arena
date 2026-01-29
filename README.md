@@ -87,6 +87,28 @@ game-rule level and the API integration level.
 - Use controlled randomness via monkeypatch to make combat deterministic
 
 ---
+## Configuration
+
+This project uses environment variables for configuration via pydantic-settings.
+
+Create a .env file from the example:
+
+    cp .env.example .env
+
+### Required variables
+
+- JWT_SECRET – secret key used to sign JWTs
+- DATABASE_URL – database connection string
+
+Example for Supabase Postgres:
+
+    DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/DBNAME
+
+The application will default to a local SQLite database if DATABASE_URL is not set.
+
+### Running the server
+
+    uvicorn app.main:app --reload
 
 ## Running Tests
 
