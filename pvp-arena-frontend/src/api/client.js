@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE;
 
 export function authHeader(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
