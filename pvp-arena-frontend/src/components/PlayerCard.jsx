@@ -121,9 +121,8 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
         )}
       </div>
       <HealthBar current={health} max={maxHealth} isActive={isActive} flashColor={flashColor} />
-      {effects.length > 0 && (
-        <div style={{ marginTop: 8, fontSize: "11px", color: "#aaa", display: "flex", flexWrap: "wrap", gap: 4 }}>
-          {effects.map((e, i) => {
+      <div style={{ marginTop: 8, fontSize: "11px", color: "#aaa", display: "flex", flexWrap: "wrap", gap: 4, minHeight: 24 }}>
+        {effects.map((e, i) => {
             const name = typeof e === "object" ? e.name : e;
             const turns = typeof e === "object" ? e.turns_left : null;
             const hits = typeof e === "object" ? e.hits_left : null;
@@ -142,7 +141,7 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
             );
           })}
         </div>
-      )}
+
       {level && xp !== undefined && <XPBar current={xp} level={level} />}
     </div>
   );
