@@ -11,7 +11,7 @@ function HealthBar({ current, max, isActive, flashColor }) {
   else if (percentage < 60) barColor = "#ff9800"; // yellow
 
   return (
-    <div style={{ position: "relative", width: "100%" }}>
+    <div style={{ position: "relative", width: "100%", minWidth: 0 }}>
       <div
         style={{
           width: "100%",
@@ -87,7 +87,7 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
   return (
     <div
       style={{
-        flex: 1,
+        minWidth: 0,
         padding: 16,
         borderRadius: 8,
         border: `2px solid ${isActive ? "#4a9eff" : "#4a5568"}`,
@@ -96,9 +96,9 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
         transition: "all 0.3s ease",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div>
-          <div style={{ fontWeight: "bold", fontSize: "18px", color: "white" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, minWidth: 0 }}>
+        <div style={{ minWidth: 0, overflow: "hidden" }}>
+          <div style={{ fontWeight: "bold", fontSize: "18px", color: "white", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {username || `Player ${playerId}`}
           </div>
           <div style={{ fontSize: "12px", color: "#999" }}>

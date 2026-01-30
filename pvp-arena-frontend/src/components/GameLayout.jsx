@@ -48,36 +48,40 @@ export default function GameLayout({
       />
 
       {gameState && (
-        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr auto 1fr" }}>
-          <PlayerCard
-            playerId={gameState.player1_id}
-            username={getUsername(gameState.player1_id, usernameMap)}
-            health={gameState.player1_health}
-            maxHealth={getMaxHp(gameState.player1_id, p1Info, gameState)}
-            isActive={status === "active" && currentTurn === gameState.player1_id}
-            isMe={isPlayer1}
-            flashColor={healthFlash.p1}
-            className={p1Info?.class_name}
-            level={p1Info?.level}
-            xp={p1Info?.xp}
-            activeEffects={gameState.player1_effects || []}
-          />
-          <div style={{ display: "flex", alignItems: "center", fontSize: "24px", fontWeight: "bold", color: "#666" }}>
+        <div className="match-cards-row">
+          <div style={{ order: isPlayer1 ? 3 : 1, minWidth: 0 }}>
+            <PlayerCard
+              playerId={gameState.player1_id}
+              username={getUsername(gameState.player1_id, usernameMap)}
+              health={gameState.player1_health}
+              maxHealth={getMaxHp(gameState.player1_id, p1Info, gameState)}
+              isActive={status === "active" && currentTurn === gameState.player1_id}
+              isMe={isPlayer1}
+              flashColor={healthFlash.p1}
+              className={p1Info?.class_name}
+              level={p1Info?.level}
+              xp={p1Info?.xp}
+              activeEffects={gameState.player1_effects || []}
+            />
+          </div>
+          <div className="match-vs" style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: "bold", color: "#666", order: 2 }}>
             VS
           </div>
-          <PlayerCard
-            playerId={gameState.player2_id}
-            username={getUsername(gameState.player2_id, usernameMap)}
-            health={gameState.player2_health}
-            maxHealth={getMaxHp(gameState.player2_id, p2Info, gameState)}
-            isActive={status === "active" && currentTurn === gameState.player2_id}
-            isMe={!isPlayer1}
-            flashColor={healthFlash.p2}
-            className={p2Info?.class_name}
-            level={p2Info?.level}
-            xp={p2Info?.xp}
-            activeEffects={gameState.player2_effects || []}
-          />
+          <div style={{ order: isPlayer1 ? 1 : 3, minWidth: 0 }}>
+            <PlayerCard
+              playerId={gameState.player2_id}
+              username={getUsername(gameState.player2_id, usernameMap)}
+              health={gameState.player2_health}
+              maxHealth={getMaxHp(gameState.player2_id, p2Info, gameState)}
+              isActive={status === "active" && currentTurn === gameState.player2_id}
+              isMe={!isPlayer1}
+              flashColor={healthFlash.p2}
+              className={p2Info?.class_name}
+              level={p2Info?.level}
+              xp={p2Info?.xp}
+              activeEffects={gameState.player2_effects || []}
+            />
+          </div>
         </div>
       )}
 

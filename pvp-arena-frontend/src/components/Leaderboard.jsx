@@ -33,8 +33,6 @@ export default function Leaderboard({ token, onClose }) {
         backgroundColor: "#1a1a1a",
         borderRadius: 8,
         border: "1px solid #333",
-        maxWidth: 400,
-        margin: "0 auto",
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>

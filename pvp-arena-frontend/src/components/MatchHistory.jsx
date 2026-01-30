@@ -8,8 +8,6 @@ export default function MatchHistory({ history, onRefresh }) {
       padding: 16,
       backgroundColor: "#1e1e1e",
       marginBottom: 20,
-      maxWidth: 1000,
-      margin: "0 auto 20px auto"
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <h3 style={{ margin: 0, color: "white" }}>Match History</h3>

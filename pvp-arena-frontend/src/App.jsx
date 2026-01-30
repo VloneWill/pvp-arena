@@ -482,12 +482,8 @@ export default function App() {
 
   return (
     <div style={{ 
-      maxWidth: "560px",
-      margin: "0 auto",
       fontFamily: "system-ui, -apple-system, sans-serif", 
-      padding: 20, 
       width: "100%",
-      minWidth: "100vw",
       minHeight: "100vh",
       boxSizing: "border-box",
       backgroundColor: "#0d0d0d",
@@ -496,10 +492,11 @@ export default function App() {
       flexDirection: "column",
       alignItems: "stretch",
     }}>
-      <h1 style={{ textAlign: "center", marginBottom: 24, color: "white", flexShrink: 0 }}>⚔️ PvP Arena</h1>
+      <div className="page-container" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, paddingTop: 20, paddingBottom: 20 }}>
+        <h1 style={{ textAlign: "center", marginBottom: 24, color: "white", flexShrink: 0 }}>⚔️ PvP Arena</h1>
 
-      {!isAuthed ? (
-        <AuthPanel
+        {!isAuthed ? (
+          <AuthPanel
           mode={mode}
           setMode={setMode}
           username={username}
@@ -619,6 +616,7 @@ export default function App() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
