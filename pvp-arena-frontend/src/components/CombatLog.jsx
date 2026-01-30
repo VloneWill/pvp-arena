@@ -26,7 +26,9 @@ export default function CombatLog({ entries }) {
         borderRadius: 8,
         padding: 16,
         backgroundColor: "#1e1e1e",
-        maxHeight: 200,
+        flex: 1,
+        minHeight: 120,
+        maxHeight: 280,
         overflowY: "auto",
       }}
     >
@@ -36,7 +38,7 @@ export default function CombatLog({ entries }) {
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
           {entries.map((entry, idx) => {
-            const isMyAction = entry.isMyAction === true;
+            const isMyAction = entry.isMyAction === true || entry.is_my_action === true;
             return (
               <div
                 key={idx}

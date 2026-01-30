@@ -110,6 +110,61 @@ The application will default to a local SQLite database if DATABASE_URL is not s
 
     uvicorn app.main:app --reload
 
+### Environment variables and production redeploy
+
+**Production redeploy is required to pick up any change to environment variables.**
+
+- **Backend (e.g. Render):** After changing `DATABASE_URL`, `JWT_SECRET`, or other env vars in the dashboard, redeploy the service so the new values are applied.
+- **Frontend (e.g. Vercel):** After changing build or runtime env vars, redeploy so the app uses the updated configuration.
+
+---
+
+## Database migrations (Alembic)
+
+**Schema evolution is done via Alembic. Do not rely on `Base.metadata.create_all()` for production updates** — it does not perform migrations (renames, type changes, drops).
+
+### Local development
+
+1. Create/activate the virtual environment and install dependencies:
+   ```bash
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+2. Apply migrations to bring the database up to date:
+   ```bash
+   alembic upgrade head
+   ```
+3. Optional local bootstrap (drops and recreates all tables; **do not use in production**):
+   ```bash
+   python reset_db.py
+   ```
+   Then run `alembic upgrade head` if you want a clean schema again.
+4. **If the database already has tables** (e.g. from an older `create_all` or `reset_db.py` run) and you have no `alembic_version` table, stamp the initial revision then upgrade to add only new columns:
+   ```bash
+   alembic stamp 15bed9213a5d
+   alembic upgrade head
+   ```
+
+### Production (e.g. Render)
+
+- Run migrations as part of deploy/startup, or as a one-off before starting the app:
+  ```bash
+  alembic upgrade head
+  ```
+- Ensure `DATABASE_URL` is set in the environment so Alembic uses the same database as the app.
+
+### Creating a new migration
+
+After changing `app.db.models`:
+
+```bash
+source .venv/bin/activate
+alembic revision --autogenerate -m "description of change"
+alembic upgrade head
+```
+
+---
+
 ## Running Tests
 
 pytest -v
@@ -132,7 +187,5 @@ http://127.0.0.1:8000/docs
 
 ## Future Work
 
-- Class-based combat roles (Warrior, Mage, Druid)
-- Experience and leveling system
 - Persistent matchmaking queues
-- Expanded combat actions and status effects
+- Additional classes and abilities

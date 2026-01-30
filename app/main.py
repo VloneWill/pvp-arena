@@ -9,11 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 #imports for the routers
 from app.api.auth import router as auth_router
 from app.api.matchmaking import router as matchmaking_router
-from app.api.matches import router as matches_router  
-
-#imports for the database
-from app.db import models
-from app.db.database import engine
+from app.api.matches import router as matches_router
+from app.api.leaderboard import router as leaderboard_router
 
 #create the FastAPI app
 app = FastAPI(title="PvP Arena")
@@ -31,13 +28,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#create the database tables
-models.Base.metadata.create_all(bind=engine)
+# Schema is managed by Alembic. For local dev bootstrap use: alembic upgrade head
+# or reset_db.py. Do NOT rely on create_all for production schema evolution.
 
 #include the routers
 app.include_router(auth_router)
 app.include_router(matchmaking_router)
 app.include_router(matches_router)
+app.include_router(leaderboard_router)
 
 #create the health check endpoint
 @app.get("/health")

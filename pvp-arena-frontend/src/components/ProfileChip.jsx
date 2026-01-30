@@ -1,18 +1,4 @@
-function getClassEmoji(className) {
-  if (!className) return "";
-  const emojis = { warrior: "⚔️", mage: "🔮", druid: "🌿" };
-  return emojis[className] || "";
-}
-
-function getClassColor(className) {
-  if (!className) return "#666";
-  const colors = { 
-    warrior: "#e63946", 
-    mage: "#457b9d", 
-    druid: "#2a9d8f" 
-  };
-  return colors[className] || "#666";
-}
+import { getClassEmoji, getClassColor } from "../data/classIcons";
 
 export default function ProfileChip({ username, className, level }) {
   return (

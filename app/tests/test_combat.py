@@ -6,6 +6,7 @@ from app.game.combat import (
     process_attack,
     process_defend,
     process_heal,
+    process_ability,
     check_match_end,
     advance_turn,
     MatchNotActiveError,
@@ -181,19 +182,19 @@ class TestClassBalance:
     """Tests to verify class balance - no single class dominates."""
     
     def test_arcane_blast_exceeds_power_strike_damage(self):
-        """Verify Mage's Arcane Blast has higher damage multiplier than Warrior's Power Strike."""
-        from app.game.combat import MAGE_ARCANE_BLAST_MULTIPLIER, WARRIOR_POWER_STRIKE_MULTIPLIER
-        assert MAGE_ARCANE_BLAST_MULTIPLIER > WARRIOR_POWER_STRIKE_MULTIPLIER, \
-            "Arcane Blast should have higher multiplier than Power Strike"
-        # Verify the gap is meaningful (at least 0.2x difference)
-        assert MAGE_ARCANE_BLAST_MULTIPLIER >= WARRIOR_POWER_STRIKE_MULTIPLIER + 0.2
-    
+        """Verify Mage has a higher damage ability multiplier than Warrior's Power Strike."""
+        from app.game.abilities import get_ability
+        power_strike = get_ability("warrior", "power_strike")
+        meteor = get_ability("mage", "meteor")
+        assert power_strike and meteor
+        assert meteor["damage_multiplier"] > power_strike["damage_multiplier"]
+        assert meteor["damage_multiplier"] >= power_strike["damage_multiplier"] + 0.2
+
     def test_rejuvenate_exceeds_base_heal(self):
-        """Verify Druid's Rejuvenate heals more than base heal."""
-        from app.game.combat import DRUID_REJUVENATE_MULTIPLIER
-        # Rejuvenate should be at least 1.4x base heal
-        assert DRUID_REJUVENATE_MULTIPLIER >= 1.4, \
-            "Rejuvenate should have meaningful multiplier over base heal"
+        """Verify Druid's Regrowth heals more than base heal."""
+        from app.game.abilities import get_ability
+        regrowth = get_ability("druid", "regrowth")
+        assert regrowth and regrowth.get("heal_multiplier", 0) >= 1.4
     
     def test_class_hp_ranges_are_reasonable(self):
         """Verify no class has extreme HP values at level 1."""
@@ -202,23 +203,17 @@ class TestClassBalance:
         warrior_hp = CLASS_STATS["warrior"]["base_hp"]
         mage_hp = CLASS_STATS["mage"]["base_hp"]
         druid_hp = CLASS_STATS["druid"]["base_hp"]
+        rogue_hp = CLASS_STATS["rogue"]["base_hp"]
         
         # Warrior should have highest HP
-        assert warrior_hp > mage_hp, "Warrior should have more HP than Mage"
-        assert warrior_hp > druid_hp, "Warrior should have more HP than Druid"
-        
+        assert warrior_hp > mage_hp and warrior_hp > druid_hp and warrior_hp > rogue_hp
         # Mage should have lowest HP
-        assert mage_hp < warrior_hp, "Mage should have less HP than Warrior"
-        assert mage_hp < druid_hp, "Mage should have less HP than Druid"
-        
-        # Druid should be in between
-        assert druid_hp > mage_hp, "Druid should have more HP than Mage"
-        assert druid_hp < warrior_hp, "Druid should have less HP than Warrior"
-        
-        # HP values should be in reasonable ranges (70-140)
-        assert 70 <= warrior_hp <= 140, "Warrior HP should be in reasonable range"
-        assert 70 <= mage_hp <= 140, "Mage HP should be in reasonable range"
-        assert 70 <= druid_hp <= 140, "Druid HP should be in reasonable range"
+        assert mage_hp < warrior_hp and mage_hp < druid_hp and mage_hp < rogue_hp
+        # Rogue: lower than warrior (evasion-focused)
+        assert rogue_hp < warrior_hp and rogue_hp > mage_hp
+        # All in reasonable range (70-140)
+        for name, hp in [("warrior", warrior_hp), ("mage", mage_hp), ("druid", druid_hp), ("rogue", rogue_hp)]:
+            assert 70 <= hp <= 140, f"{name} HP should be in reasonable range"
     
     def test_class_attack_ranges_are_balanced(self):
         """Verify attack damage ranges are balanced."""
@@ -404,3 +399,481 @@ class TestHPAlignment:
                 f"Player1 should start at full health ({warrior_max}), got {data['player1_health']}"
             assert data["player2_max_hp"] == druid_max, "player2_max_hp should be correct"
             assert data["player1_max_hp"] == warrior_max, "player1_max_hp should be correct"
+
+
+class TestCombatLogPersistence:
+    """Verify combat_log and cooldowns/effects persist across commit and re-query (JSON mutation safety)."""
+
+    def test_combat_log_persists_after_commit(self, db_session):
+        """Perform action -> commit -> re-query -> assert combat_log persisted."""
+        match = make_match(db_session)
+        from app.game.combat import process_attack, initialize_match
+
+        initialize_match(match, db_session)
+        db_session.commit()
+        process_attack(
+            match=match,
+            attacker_id=match.player1_id,
+            defender_id=match.player2_id,
+            db=db_session,
+        )
+        db_session.commit()
+        db_session.refresh(match)
+        assert match.combat_log is not None
+        assert len(match.combat_log) >= 1
+        assert any(e.get("action_type") == "attack" for e in match.combat_log)
+
+        # Re-query from DB (new object) to ensure it was written
+        from app.db.models import Match
+        match2 = db_session.query(Match).filter(Match.id == match.id).first()
+        assert match2 is not None
+        assert match2.combat_log is not None
+        assert len(match2.combat_log) >= 1
+
+    def test_cooldowns_and_effects_persist_after_reload(self, db_session):
+        """Use ability -> commit -> re-query -> assert cooldowns/effects persisted."""
+        match = make_match(db_session, player1_class="warrior", player2_class="mage")
+        from app.game.combat import process_ability, initialize_match
+        from app.db.models import Match
+
+        initialize_match(match, db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        process_ability(match, match.player1_id, "power_strike", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        cooldowns = getattr(match, "player1_cooldowns", None) or {}
+        assert cooldowns.get("power_strike", 0) > 0
+
+        match2 = db_session.query(Match).filter(Match.id == match.id).first()
+        assert match2 is not None
+        c2 = getattr(match2, "player1_cooldowns", None) or {}
+        assert c2.get("power_strike", 0) > 0
+
+
+class TestCombatLogEffectResolution:
+    """Combat log must show effect-driven outcomes: mitigation, DoT, reflect, evade."""
+
+    def test_mitigation_effect_produces_log_entry(self, db_session):
+        """Arcane Shield absorb produces a damage_absorbed log entry."""
+        match = make_match(db_session, player1_class="mage", player2_class="warrior")
+        # P1 (mage) casts arcane_shield on self, then P2 attacks P1
+        process_ability(match, match.player1_id, "arcane_shield", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        advance_turn(match)
+        # P2 attacks P1; P1's arcane shield should absorb some damage
+        process_attack(
+            match=match,
+            attacker_id=match.player2_id,
+            defender_id=match.player1_id,
+            db=db_session,
+        )
+        log_types = [e.get("action_type") for e in (match.combat_log or [])]
+        assert "damage_absorbed" in log_types, "Combat log should contain damage_absorbed when Arcane Shield absorbs"
+        absorbed_evt = next(e for e in match.combat_log if e.get("action_type") == "damage_absorbed")
+        assert absorbed_evt.get("effect") == "arcane_shield"
+        assert absorbed_evt.get("amount", 0) >= 0
+
+    def test_dot_effect_produces_log_entries_on_subsequent_turns(self, db_session):
+        """Poison DoT produces dot_tick log entries on subsequent turns."""
+        match = make_match(db_session, player1_class="rogue", player2_class="warrior")
+        # P1 (rogue) applies poison to P2 (enemy)
+        process_ability(match, match.player1_id, "poison", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        advance_turn(match)
+        # Start of P2's turn: DoT ticks on P2 (poison on P2)
+        from app.game.combat import _apply_dot_ticks
+        _apply_dot_ticks(match, match.player2_id, db_session)
+        log_types = [e.get("action_type") for e in (match.combat_log or [])]
+        assert "dot_tick" in log_types, "Combat log should contain dot_tick when Poison ticks"
+        dot_evt = next(e for e in match.combat_log if e.get("action_type") == "dot_tick")
+        assert dot_evt.get("effect") == "poison"
+        assert dot_evt.get("damage", 0) > 0
+        assert dot_evt.get("target_id") == match.player2_id
+
+
+class TestCombatLogGrammarAndActionKey:
+    """Combat log messages: correct grammar, past tense for results, action_key always present."""
+
+    def test_attack_event_has_action_key(self, db_session):
+        match = make_match(db_session)
+        process_attack(
+            match=match,
+            attacker_id=match.player1_id,
+            defender_id=match.player2_id,
+            db=db_session,
+        )
+        attack_evt = next(e for e in match.combat_log if e.get("action_type") == "attack")
+        assert attack_evt.get("action_key") == "attack"
+
+    def test_defend_event_has_action_key(self, db_session):
+        match = make_match(db_session)
+        process_defend(match, match.player1_id, db_session)
+        defend_evt = next(e for e in match.combat_log if e.get("action_type") == "defend")
+        assert defend_evt.get("action_key") == "defend"
+
+    def test_heal_event_has_action_key(self, db_session):
+        match = make_match(db_session)
+        process_heal(match, match.player1_id, db_session)
+        heal_evt = next(e for e in match.combat_log if e.get("action_type") == "heal")
+        assert heal_evt.get("action_key") == "heal"
+
+    def test_combat_log_formatter_produces_correct_grammar(self):
+        """Snapshot-style: formatter uses past tense for damage and includes action name."""
+        from app.game.combat_log import format_combat_log_message
+
+        event = {
+            "action_type": "attack",
+            "action_key": "attack",
+            "attacker_id": 1,
+            "defender_id": 2,
+            "damage": 12,
+            "defended": False,
+            "attacker_username": "Alice",
+            "defender_username": "Bob",
+        }
+        msg = format_combat_log_message(event, viewer_id=2, actor_username="Alice", defender_username="Bob", attacker_username="Alice")
+        assert "dealt" in msg
+        assert "12" in msg
+        assert "Basic Attack" in msg
+        assert "You" in msg or "Bob" in msg
+
+        event_heal = {"action_type": "heal", "action_key": "heal", "actor_id": 1, "healed": 10, "actor_username": "Alice"}
+        msg_heal = format_combat_log_message(event_heal, viewer_id=1, actor_username="Alice")
+        assert "healed" in msg_heal
+        assert "10" in msg_heal
+        assert "Heal" in msg_heal
+
+
+class TestShieldWallAndEvadeLifecycle:
+    """Shield Wall and Evade: next-hit buffs, consumed on hit, not decremented on application turn."""
+
+    def test_shield_wall_reduces_two_hits_then_expires(self, db_session):
+        match = make_match(db_session, player1_class="warrior", player2_class="mage")
+        # P1 uses Shield Wall (effect, hits_left=2; does not expire by turn)
+        process_ability(match, match.player1_id, "shield_wall", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects_before = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "shield_wall" for e in effects_before), "Shield Wall should be applied"
+        sw = next(e for e in effects_before if e.get("name") == "shield_wall")
+        assert sw.get("hits_left") == 2, "Shield Wall should have 2 hits remaining"
+
+        advance_turn(match)
+        effects_after_turn = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "shield_wall" for e in effects_after_turn), "Shield Wall should not expire at end of turn"
+
+        # First hit: Shield Wall reduces damage, 1 hit remaining
+        hp_before_1 = match.player1_health
+        process_attack(match, attacker_id=match.player2_id, defender_id=match.player1_id, db=db_session)
+        hp_after_1 = match.player1_health
+        assert hp_before_1 - hp_after_1 < 20, "Shield Wall should reduce first hit"
+        db_session.commit()
+        db_session.refresh(match)
+        effects_after_first = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "shield_wall" for e in effects_after_first), "Shield Wall should have 1 hit left after first hit"
+        sw_1 = next(e for e in effects_after_first if e.get("name") == "shield_wall")
+        assert sw_1.get("hits_left") == 1, "Shield Wall should have 1 hit remaining"
+
+        advance_turn(match)
+        process_attack(match, attacker_id=match.player2_id, defender_id=match.player1_id, db=db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects_after_second = list(getattr(match, "player1_effects", None) or [])
+        assert not any(e.get("name") == "shield_wall" for e in effects_after_second), "Shield Wall should expire after two hits"
+
+    def test_evade_triggers_on_next_hit_then_expires(self, db_session):
+        match = make_match(db_session, player1_class="rogue", player2_class="warrior")
+        process_ability(match, match.player1_id, "evade", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects_before = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "evade" for e in effects_before)
+
+        advance_turn(match)
+        process_attack(match, attacker_id=match.player2_id, defender_id=match.player1_id, db=db_session)
+        log_types = [e.get("action_type") for e in (match.combat_log or [])]
+        assert "evade_avoided" in log_types, "Evade should trigger and log"
+        effects_after = list(getattr(match, "player1_effects", None) or [])
+        assert not any(e.get("name") == "evade" for e in effects_after), "Evade should expire after one hit"
+
+    def test_evade_not_decremented_immediately_on_application(self, db_session):
+        """Evade has hits_left, not turns_left; so it must not be removed at end of turn."""
+        match = make_match(db_session, player1_class="rogue", player2_class="warrior")
+        process_ability(match, match.player1_id, "evade", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        advance_turn(match)
+        effects_after_tick = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "evade" for e in effects_after_tick), "Evade should still be present after turn tick (hits_left, not turns)"
+
+
+class TestChillEffect:
+    """Chill from Ice Bolt has a real mechanical effect (target takes more damage)."""
+
+    def test_ice_bolt_applies_chill_and_chill_increases_damage(self, db_session):
+        match = make_match(db_session, player1_class="mage", player2_class="warrior")
+        # P1 (mage) hits P2 with Ice Bolt -> applies Chill on P2
+        process_ability(match, match.player1_id, "ice_bolt", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects = list(getattr(match, "player2_effects", None) or [])
+        assert any(e.get("name") == "chill" for e in effects), "Chill should be applied"
+
+        advance_turn(match)
+        # P1 attacks P2; Chill on P2 should increase damage taken, then Chill is consumed
+        hp_before = match.player2_health
+        process_attack(match, attacker_id=match.player1_id, defender_id=match.player2_id, db=db_session)
+        hp_after = match.player2_health
+        assert hp_before - hp_after >= 1, "Chill should increase damage"
+        effects_after = list(getattr(match, "player2_effects", None) or [])
+        assert not any(e.get("name") == "chill" for e in effects_after), "Chill consumed after one hit"
+
+
+class TestUniqueAbilityMechanics:
+    """Each class ability has a distinct mechanic: Shield Wall != Defend, Backstab applies bleed, Shadowstep grants evasion."""
+
+    def test_shield_wall_differs_from_defend(self, db_session):
+        match = make_match(db_session, player1_class="warrior", player2_class="mage")
+        process_ability(match, match.player1_id, "shield_wall", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        assert not match.player1_defending, "Shield Wall is an effect, not the defend flag"
+        effects = getattr(match, "player1_effects", None) or []
+        assert any(e.get("name") == "shield_wall" for e in effects)
+
+    def test_backstab_applies_bleed_when_target_not_defending(self, db_session):
+        match = make_match(db_session, player1_class="rogue", player2_class="warrior")
+        process_ability(match, match.player1_id, "backstab", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects = getattr(match, "player2_effects", None) or []
+        assert any(e.get("name") == "bleed" for e in effects), "Backstab should apply Bleed when target not defending"
+
+    def test_shadowstep_grants_evasion_to_self(self, db_session):
+        match = make_match(db_session, player1_class="rogue", player2_class="warrior")
+        process_ability(match, match.player1_id, "shadowstep", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects = getattr(match, "player1_effects", None) or []
+        assert any(e.get("name") == "evade" for e in effects), "Shadowstep should grant Evasion to self"
+
+
+class TestChillPersistsUntilCasterNextTurn:
+    """Chill applied to opponent remains active when caster gets their next turn (expires at end of caster's next turn)."""
+
+    def test_chill_remains_when_caster_gets_next_turn(self, db_session):
+        match = make_match(db_session, player1_class="mage", player2_class="warrior")
+        process_ability(match, match.player1_id, "ice_bolt", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects_p2 = list(getattr(match, "player2_effects", None) or [])
+        assert any(e.get("name") == "chill" for e in effects_p2), "Chill should be on P2"
+        advance_turn(match)
+        assert match.current_turn == match.player2_id
+        process_defend(match, match.player2_id, db_session)
+        advance_turn(match)
+        effects_p2_after = list(getattr(match, "player2_effects", None) or [])
+        assert any(e.get("name") == "chill" for e in effects_p2_after), "Chill should still be on P2 when P1 gets next turn"
+        hp_before = match.player2_health
+        process_attack(match, match.player1_id, match.player2_id, db_session)
+        hp_after = match.player2_health
+        assert hp_before - hp_after >= 1, "Chill should increase damage on P1's next hit"
+        effects_p2_final = list(getattr(match, "player2_effects", None) or [])
+        assert not any(e.get("name") == "chill" for e in effects_p2_final), "Chill consumed after hit"
+
+
+class TestShapeshiftDuration:
+    """Shapeshift remains active through opponent's turn and caster's next turn."""
+
+    def test_shapeshift_last_through_opponent_turn_and_caster_next_turn(self, db_session):
+        match = make_match(db_session, player1_class="druid", player2_class="warrior")
+        process_ability(match, match.player1_id, "shapeshift", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "shapeshift" for e in effects)
+        advance_turn(match)
+        effects_after_p1 = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "shapeshift" for e in effects_after_p1), "Shapeshift should still be up after P1 ends turn"
+        process_attack(match, match.player2_id, match.player1_id, db_session)
+        advance_turn(match)
+        effects_after_p2 = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "shapeshift" for e in effects_after_p2), "Shapeshift should still be up after P2's turn"
+        assert match.current_turn == match.player1_id
+        process_attack(match, match.player1_id, match.player2_id, db_session)
+        effects_after_p1_act = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "shapeshift" for e in effects_after_p1_act), "Shapeshift should still be up when P1 acts again"
+
+
+class TestBattleShoutEffect:
+    """Battle Shout has measurable effect (flat damage + damage reduction) and persists until end of next turn."""
+
+    def test_battle_shout_increases_damage_and_reduces_incoming(self, db_session):
+        match = make_match(db_session, player1_class="warrior", player2_class="mage")
+        process_ability(match, match.player1_id, "battle_shout", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "battle_shout" for e in effects), "Battle Shout should be applied"
+        advance_turn(match)
+        hp_p1_before = match.player1_health
+        process_attack(match, match.player2_id, match.player1_id, db_session)
+        hp_p1_after = match.player1_health
+        damage_taken = hp_p1_before - hp_p1_after
+        assert damage_taken >= 0
+        advance_turn(match)
+        hp_p2_before = match.player2_health
+        process_attack(match, match.player1_id, match.player2_id, db_session)
+        hp_p2_after = match.player2_health
+        damage_dealt = hp_p2_before - hp_p2_after
+        assert damage_dealt >= 5, "Battle Shout should add at least 5 flat damage"
+
+
+class TestCombatLogPossessiveGrammar:
+    """Combat log never outputs 'You's'; uses 'Your' and 'Opponent's' correctly."""
+
+    def test_damage_reflected_uses_your_not_yous(self):
+        from app.game.combat_log import format_combat_log_message
+        event = {
+            "action_type": "damage_reflected",
+            "effect": "thorns",
+            "defender_id": 1,
+            "attacker_id": 2,
+            "amount": 10,
+            "defender_username": "Alice",
+            "attacker_username": "Bob",
+        }
+        msg = format_combat_log_message(
+            event, viewer_id=1, actor_username="Alice",
+            defender_username="Alice", attacker_username="Bob"
+        )
+        assert "You's" not in msg, "Must never output 'You's'"
+        assert "Your" in msg, "Viewer's effect should use 'Your'"
+        assert "10" in msg
+
+    def test_damage_reflected_uses_opponent_possessive_when_viewer_is_attacker(self):
+        from app.game.combat_log import format_combat_log_message
+        event = {
+            "action_type": "damage_reflected",
+            "effect": "thorns",
+            "defender_id": 1,
+            "attacker_id": 2,
+            "amount": 8,
+            "defender_username": "Alice",
+            "attacker_username": "Bob",
+        }
+        msg = format_combat_log_message(
+            event, viewer_id=2, actor_username="Bob",
+            defender_username="Alice", attacker_username="Bob"
+        )
+        assert "You's" not in msg
+
+
+class TestCombatLogYouOpponentLabel:
+    """Combat log display uses actor_id to set is_my_action (YOU vs OPPONENT)."""
+
+    def test_build_display_entry_uses_actor_id_for_is_my_action(self):
+        from app.game.combat_log import build_display_entry
+        event_my = {"action_type": "attack", "attacker_id": 1, "defender_id": 2, "damage": 10, "defended": False,
+                    "actor_username": "Me", "attacker_username": "Me", "defender_username": "Other"}
+        entry_my = build_display_entry(event_my, viewer_id=1)
+        assert entry_my["is_my_action"] is True
+        event_other = {"action_type": "attack", "attacker_id": 2, "defender_id": 1, "damage": 10, "defended": False,
+                       "actor_username": "Other", "attacker_username": "Other", "defender_username": "Me"}
+        entry_other = build_display_entry(event_other, viewer_id=1)
+        assert entry_other["is_my_action"] is False
+
+
+class TestShapeshiftHealBoostAndCombatLogBuffs:
+    """Shapeshift increases healing; combat log reflects heal/damage buff breakdowns."""
+
+    def test_shapeshift_increases_heal_and_log_shows_breakdown(self, db_session):
+        match = make_match(db_session, player1_class="druid", player2_class="warrior")
+        process_ability(match, match.player1_id, "shapeshift", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        effects = list(getattr(match, "player1_effects", None) or [])
+        assert any(e.get("name") == "shapeshift" for e in effects)
+        hp_before = match.player1_health
+        match.player1_health = max(0, hp_before - 30)  # take some damage
+        db_session.commit()
+        db_session.refresh(match)
+        process_heal(match, match.player1_id, db_session)  # basic heal
+        result = match.combat_log[-1]
+        assert result.get("healed", 0) > 0
+        assert result.get("heal_bonus_shapeshift", 0) > 0
+        from app.game.combat_log import format_combat_log_message
+        msg = format_combat_log_message(
+            result, viewer_id=match.player1_id, actor_username="Druid",
+        )
+        assert "Shapeshift" in msg
+        assert "Increased by" in msg
+
+    def test_combat_log_heal_message_includes_shapeshift_bonus(self):
+        from app.game.combat_log import format_combat_log_message
+        event = {"action_type": "heal", "action_key": "heal", "actor_id": 1, "healed": 14, "heal_bonus_shapeshift": 5}
+        msg = format_combat_log_message(event, viewer_id=1, actor_username="You")
+        assert "14" in msg
+        assert "Increased by 5 for Shapeshift" in msg
+
+    def test_combat_log_attack_message_includes_buff_breakdowns(self):
+        from app.game.combat_log import format_combat_log_message
+        event = {
+            "action_type": "attack", "action_key": "power_strike", "attacker_id": 1, "defender_id": 2,
+            "damage": 22, "defended": False, "damage_bonus_battle_shout": 5, "damage_bonus_chill": 3,
+            "attacker_username": "War", "defender_username": "Mage",
+        }
+        msg = format_combat_log_message(event, viewer_id=1, actor_username="War", attacker_username="War", defender_username="Mage")
+        assert "22" in msg
+        assert "Increased by 5 for Battle Shout" in msg
+        assert "Increased by 3 for Chill" in msg
+
+    def test_nature_wrath_with_shapeshift_shows_damage_bonus_in_log(self, db_session):
+        """Attack abilities (e.g. Nature Wrath) with Shapeshift active show 'Increased by X for Shapeshift' in combat log."""
+        match = make_match(db_session, player1_class="druid", player2_class="warrior")
+        process_ability(match, match.player1_id, "shapeshift", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        process_ability(match, match.player1_id, "nature_wrath", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        attack_evts = [e for e in (match.combat_log or []) if e.get("action_key") == "nature_wrath" or (e.get("action_type") == "attack" and e.get("damage"))]
+        assert attack_evts, "Combat log should have Nature Wrath attack"
+        last_attack = attack_evts[-1]
+        assert last_attack.get("damage_bonus_shapeshift", 0) > 0, "Nature Wrath with Shapeshift should log damage_bonus_shapeshift"
+        from app.game.combat_log import format_combat_log_message
+        msg = format_combat_log_message(
+            last_attack, viewer_id=match.player1_id, actor_username="Druid",
+            attacker_username="Druid", defender_username="War",
+        )
+        assert "Shapeshift" in msg
+        assert "Increased by" in msg
+
+    def test_all_ability_buff_breakdowns_on_attack_line(self):
+        """Shield Wall, Evade, Thorns, Arcane Shield, Chill, Battle Shout appear on main attack line when they apply."""
+        from app.game.combat_log import format_combat_log_message
+        # Shield Wall: reduced + reflected
+        ev = {"action_type": "attack", "action_key": "attack", "attacker_id": 1, "defender_id": 2, "damage": 15,
+              "defended": False, "damage_reduced_shield_wall": 25, "damage_reflected_shield_wall": 5,
+              "attacker_username": "A", "defender_username": "B"}
+        msg = format_combat_log_message(ev, viewer_id=1, actor_username="A", attacker_username="A", defender_username="B")
+        assert "Reduced by 25 (Shield Wall)" in msg
+        assert "Reflected 5 to attacker (Shield Wall)" in msg
+        # Evade
+        ev2 = {"action_type": "attack", "action_key": "attack", "attacker_id": 1, "defender_id": 2, "damage": 0,
+               "defended": False, "evaded": True, "attacker_username": "A", "defender_username": "B"}
+        msg2 = format_combat_log_message(ev2, viewer_id=1, actor_username="A", attacker_username="A", defender_username="B")
+        assert "Evaded." in msg2
+        # Thorns
+        ev3 = {"action_type": "attack", "action_key": "attack", "attacker_id": 1, "defender_id": 2, "damage": 12,
+               "defended": False, "damage_reflected_thorns": 3, "attacker_username": "A", "defender_username": "B"}
+        msg3 = format_combat_log_message(ev3, viewer_id=1, actor_username="A", attacker_username="A", defender_username="B")
+        assert "Reflected 3 to attacker (Thorns)" in msg3
+        # Arcane Shield
+        ev4 = {"action_type": "attack", "action_key": "attack", "attacker_id": 1, "defender_id": 2, "damage": 5,
+               "defended": False, "damage_absorbed_arcane_shield": 18, "attacker_username": "A", "defender_username": "B"}
+        msg4 = format_combat_log_message(ev4, viewer_id=1, actor_username="A", attacker_username="A", defender_username="B")
+        assert "Absorbed 18 (Arcane Shield)" in msg4

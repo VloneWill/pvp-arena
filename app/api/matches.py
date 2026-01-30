@@ -8,7 +8,8 @@ from app.core.security import get_current_user_id
 from app.db.database import get_db
 from app.db.models import Match
 #imports for the schemas
-from app.game.schemas import MatchOut, MatchEndRequest, ActionRequest, GameStateOut
+from app.game.schemas import MatchOut, MatchEndRequest, ActionRequest, GameStateOut, CombatLogDisplayEntry
+from app.game.combat_log import build_display_entry
 #imports for the combat
 from app.game.combat import (
     initialize_match,
@@ -211,7 +212,25 @@ def get_game_state(
     p1_health = min(match.player1_health, p1_max_hp)
     p2_health = min(match.player2_health, p2_max_hp)
     
-    # Use match.winner_id as source of truth
+    p1_cooldowns = getattr(match, "player1_cooldowns", None) or {}
+    p2_cooldowns = getattr(match, "player2_cooldowns", None) or {}
+    p1_effects = getattr(match, "player1_effects", None) or []
+    p2_effects = getattr(match, "player2_effects", None) or []
+
+    from app.game.tooltip_stats import compute_action_tooltips
+    p1_class = p1.class_name if p1 else None
+    p2_class = p2.class_name if p2 else None
+    p1_level = p1.level if p1 else 1
+    p2_level = p2.level if p2 else 1
+    p1_action_tooltips = compute_action_tooltips(p1_class, p1_level, p1_cooldowns) if p1_class else {}
+    p2_action_tooltips = compute_action_tooltips(p2_class, p2_level, p2_cooldowns) if p2_class else {}
+
+    combat_log_events = match.combat_log or []
+    combat_log_display_list = [
+        CombatLogDisplayEntry(**build_display_entry(ev, user_id))
+        for ev in combat_log_events
+    ]
+
     return GameStateOut(
         match_id=match.id,
         player1_id=match.player1_id,
@@ -228,11 +247,18 @@ def get_game_state(
         player2_ability_effect=match.player2_ability_effect,
         player1_ability_cooldown=match.player1_ability_cooldown,
         player2_ability_cooldown=match.player2_ability_cooldown,
+        player1_cooldowns=p1_cooldowns,
+        player2_cooldowns=p2_cooldowns,
+        player1_effects=p1_effects,
+        player2_effects=p2_effects,
         status=match.status,
         winner_id=match.winner_id,
         combat_log=match.combat_log or [],
+        combat_log_display=combat_log_display_list,
         player1_stats=p1_stats,
         player2_stats=p2_stats,
+        player1_action_tooltips=p1_action_tooltips,
+        player2_action_tooltips=p2_action_tooltips,
     )
 
 #create the take action endpoint
@@ -257,28 +283,32 @@ def take_action(
     is_player1 = user_id == match.player1_id
     opponent_id = match.player2_id if is_player1 else match.player1_id
 
-    # Create engine instance with db session
-    engine = CombatEngine(db)
+    action_type = payload.action
+    ability_id = payload.ability
+    if action_type == "ability" and not ability_id:
+        raise HTTPException(status_code=400, detail="ability is required when action is 'ability'")
+    if action_type not in ("attack", "defend", "heal", "ability"):
+        ability_id = action_type
+        action_type = "ability"
 
+    engine = CombatEngine(db)
     try:
-        if payload.action == "attack":
+        if action_type == "attack":
             result = engine.attack(match, attacker_id=user_id, defender_id=opponent_id)
             result["attacker_id"] = user_id
             result["defender_id"] = opponent_id
-        elif payload.action == "defend":
+        elif action_type == "defend":
             result = engine.defend(match, player_id=user_id)
             result["actor_id"] = user_id
             result["opponent_id"] = opponent_id
-        elif payload.action == "heal":
+        elif action_type == "heal":
             result = engine.heal(match, player_id=user_id)
             result["actor_id"] = user_id
             result["opponent_id"] = opponent_id
-        elif payload.action in ("power_strike", "arcane_blast", "rejuvenate"):
-            result = engine.class_ability(match, player_id=user_id)
+        else:
+            result = engine.class_ability(match, player_id=user_id, ability_id=ability_id)
             result["actor_id"] = user_id
             result["opponent_id"] = opponent_id
-        else:
-            raise InvalidActionError(f"Unknown action: {payload.action}")
     except MatchNotActiveError as exc:
         # Match is no longer active
         raise HTTPException(status_code=409, detail=str(exc))
@@ -311,9 +341,24 @@ def take_action(
     p1_health = min(match.player1_health, p1_max_hp)
     p2_health = min(match.player2_health, p2_max_hp)
 
-    # Use match.winner_id as source of truth (set by check_match_end)
+    from app.game.tooltip_stats import compute_action_tooltips
+    p1_class = p1.class_name if p1 else None
+    p2_class = p2.class_name if p2 else None
+    p1_level = p1.level if p1 else 1
+    p2_level = p2.level if p2 else 1
+    p1_cooldowns = getattr(match, "player1_cooldowns", None) or {}
+    p2_cooldowns = getattr(match, "player2_cooldowns", None) or {}
+    p1_action_tooltips = compute_action_tooltips(p1_class, p1_level, p1_cooldowns) if p1_class else {}
+    p2_action_tooltips = compute_action_tooltips(p2_class, p2_level, p2_cooldowns) if p2_class else {}
+    combat_log_after = match.combat_log or []
+    combat_log_display_after = [
+        CombatLogDisplayEntry(**build_display_entry(ev, user_id))
+        for ev in combat_log_after
+    ]
+
+    action_display = ability_id or result.get("action", action_type)
     return {
-        "action": payload.action,
+        "action": action_display,
         "result": result,
         "game_state": GameStateOut(
             match_id=match.id,
@@ -331,10 +376,17 @@ def take_action(
             player2_ability_effect=match.player2_ability_effect,
             player1_ability_cooldown=match.player1_ability_cooldown,
             player2_ability_cooldown=match.player2_ability_cooldown,
+            player1_cooldowns=p1_cooldowns,
+            player2_cooldowns=p2_cooldowns,
+            player1_effects=getattr(match, "player1_effects", None) or [],
+            player2_effects=getattr(match, "player2_effects", None) or [],
             status=match.status,
             winner_id=match.winner_id,
-            combat_log=match.combat_log or [],
+            combat_log=combat_log_after,
+            combat_log_display=combat_log_display_after,
             player1_stats=p1_stats,
             player2_stats=p2_stats,
+            player1_action_tooltips=p1_action_tooltips,
+            player2_action_tooltips=p2_action_tooltips,
         ),
     }

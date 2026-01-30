@@ -6,7 +6,7 @@ export default function AuthPanel({ mode, setMode, username, setUsername, passwo
       maxWidth: 420, 
       margin: "0 auto",
       padding: 24,
-      backgroundColor: "#1e1e1e",
+      backgroundColor: "#1a1a1a",
       borderRadius: 8,
       border: "1px solid #333"
     }}>
@@ -104,6 +104,7 @@ export default function AuthPanel({ mode, setMode, username, setUsername, passwo
             <option value="warrior">⚔️ Warrior - High HP, Strong Attacks</option>
             <option value="mage">🔮 Mage - High Damage, Lower HP</option>
             <option value="druid">🌿 Druid - Balanced, Strong Heals</option>
+            <option value="rogue">🗡️ Rogue - High Tempo, Evasion & Burst</option>
           </select>
         </label>
       )}

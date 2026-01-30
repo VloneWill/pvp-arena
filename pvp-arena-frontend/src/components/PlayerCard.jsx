@@ -1,4 +1,7 @@
-import { getHpPercent } from "../utils/formatters";
+import { getHpPercent, humanize } from "../utils/formatters";
+import Tooltip from "./Tooltip";
+import { buildEffectTooltipContent } from "../data/actionTooltips";
+import { getClassEmoji } from "../data/classIcons";
 
 // Health bar component
 function HealthBar({ current, max, isActive, flashColor }) {
@@ -43,15 +46,15 @@ function HealthBar({ current, max, isActive, flashColor }) {
   );
 }
 
-// XP Bar component
+// XP Bar component (100 XP per level)
 function XPBar({ current, level }) {
-  const xpNeeded = 100 * level;
+  const xpNeeded = 100;
   const percentage = Math.min(100, (current / xpNeeded) * 100);
   
   return (
     <div style={{ marginTop: 8 }}>
       <div style={{ fontSize: "11px", color: "#999", marginBottom: 2 }}>
-        Level {level} • {current} / {xpNeeded} XP
+        Level {level} • {current} / {xpNeeded} XP to next
       </div>
       <div
         style={{
@@ -75,13 +78,12 @@ function XPBar({ current, level }) {
   );
 }
 
-function getClassEmoji(className) {
-  if (!className) return "";
-  const emojis = { warrior: "⚔️", mage: "🔮", druid: "🌿" };
-  return emojis[className] || "";
+function formatClassName(className) {
+  return humanize(className || "");
 }
 
-export default function PlayerCard({ playerId, username, health, maxHealth, isActive, isMe, flashColor, className, level, xp }) {
+export default function PlayerCard({ playerId, username, health, maxHealth, isActive, isMe, flashColor, className, level, xp, activeEffects }) {
+  const effects = Array.isArray(activeEffects) ? activeEffects : [];
   return (
     <div
       style={{
@@ -101,7 +103,7 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
           </div>
           <div style={{ fontSize: "12px", color: "#999" }}>
             {isMe ? "You" : "Opponent"}
-            {className && ` • ${getClassEmoji(className)} ${className.charAt(0).toUpperCase() + className.slice(1)}`}
+            {className && ` • ${getClassEmoji(className)} ${formatClassName(className)}`}
             {level && ` Lv.${level}`}
           </div>
         </div>
@@ -119,6 +121,28 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
         )}
       </div>
       <HealthBar current={health} max={maxHealth} isActive={isActive} flashColor={flashColor} />
+      {effects.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: "11px", color: "#aaa", display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {effects.map((e, i) => {
+            const name = typeof e === "object" ? e.name : e;
+            const turns = typeof e === "object" ? e.turns_left : null;
+            const hits = typeof e === "object" ? e.hits_left : null;
+            const label = humanize(name) + (hits != null ? ` (${hits} hit${hits === 1 ? "" : "s"})` : turns != null ? ` (${turns})` : "");
+
+            return (
+              <Tooltip
+                key={i}
+                content={buildEffectTooltipContent(e)}
+                placement="top"
+              >
+                <span style={{ backgroundColor: "#333", padding: "2px 6px", borderRadius: 4, cursor: "help" }}>
+                  {label}
+                </span>
+              </Tooltip>
+            );
+          })}
+        </div>
+      )}
       {level && xp !== undefined && <XPBar current={xp} level={level} />}
     </div>
   );

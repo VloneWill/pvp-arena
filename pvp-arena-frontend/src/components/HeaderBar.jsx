@@ -1,9 +1,8 @@
 import ProfileChip from "./ProfileChip";
 
-export default function HeaderBar({ username, className, level, showHistory, onToggleHistory, onLogout }) {
+export default function HeaderBar({ username, className, level, showHistory, onToggleHistory, showLeaderboard, onToggleLeaderboard, onLogout }) {
   return (
-    <div style={{ display: "grid", gap: 12, maxWidth: 1000, margin: "0 auto 20px auto" }}>
-      {/* Profile Header - separate box, centered */}
+    <div style={{ display: "grid", gap: 12, margin: "0 0 20px 0" }}>
       <div style={{ 
         display: "flex", 
         justifyContent: "center",
@@ -15,8 +14,6 @@ export default function HeaderBar({ username, className, level, showHistory, onT
       }}>
         <ProfileChip username={username} className={className} level={level} />
       </div>
-      
-      {/* Action Buttons - separate box, centered */}
       <div style={{ 
         display: "flex", 
         justifyContent: "center",
@@ -40,6 +37,21 @@ export default function HeaderBar({ username, className, level, showHistory, onT
           }}
         >
           {showHistory ? "Hide" : "Show"} History
+        </button>
+        <button 
+          onClick={onToggleLeaderboard}
+          style={{
+            padding: "8px 16px",
+            backgroundColor: showLeaderboard ? "#4a5568" : "#2d3748",
+            color: "white",
+            border: "1px solid #4a5568",
+            borderRadius: 6,
+            cursor: "pointer",
+            fontWeight: "bold",
+            fontSize: "14px"
+          }}
+        >
+          {showLeaderboard ? "Hide" : "Show"} Leaderboard
         </button>
         <button 
           onClick={onLogout}

@@ -71,3 +71,15 @@ export function getHpPercent(current, max) {
 export function getUsername(userId, usernameMap) {
   return usernameMap[userId] || `Player ${userId}`;
 }
+
+/**
+ * Humanize snake_case to Title Case (single source for UI).
+ * "arcane_blast" -> "Arcane Blast"
+ */
+export function humanize(str) {
+  if (str == null || typeof str !== "string") return "";
+  return str
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}

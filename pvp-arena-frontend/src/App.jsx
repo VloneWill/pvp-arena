@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "./api/client";
-import { buildCombatMessage, getUsername } from "./utils/formatters";
+import { getUsername, humanize } from "./utils/formatters";
 import { useMatchPolling, useMatchmakingPolling } from "./hooks/useMatchPolling";
 import AuthPanel from "./components/AuthPanel";
 import HeaderBar from "./components/HeaderBar";
-import MatchBanner from "./components/MatchBanner";
-import PlayerCard from "./components/PlayerCard";
-import ActionBar from "./components/ActionBar";
-import CombatLog from "./components/CombatLog";
+import GameLayout from "./components/GameLayout";
 import MatchHistory from "./components/MatchHistory";
+import Leaderboard from "./components/Leaderboard";
 
 export default function App() {
   const [mode, setMode] = useState("login");
@@ -26,7 +24,9 @@ export default function App() {
   const [userInfoMap, setUserInfoMap] = useState({}); // Map of userId -> {class_name, level, xp}
   const [healthFlash, setHealthFlash] = useState({ p1: null, p2: null });
   const [showHistory, setShowHistory] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [history, setHistory] = useState([]);
+  const [mmInFlight, setMmInFlight] = useState(false);
   const [actionInFlight, setActionInFlight] = useState(false);
   const [prevGameState, setPrevGameState] = useState(null);
   const [matchFinishedTime, setMatchFinishedTime] = useState(null);
@@ -87,6 +87,16 @@ export default function App() {
     });
     //eslint-disable-next-line
   }, [token]);
+
+  // Reconcile matchmaking status on load (e.g. after refresh)
+  useEffect(() => {
+    if (!token || !isAuthed) return;
+    apiFetch("/matchmaking/status", { token })
+      .then((data) => {
+        if (data.in_queue) setMmStatus("waiting");
+      })
+      .catch(() => {});
+  }, [token, isAuthed]);
 
   // Load usernames and update stats when match/gameState changes
   useEffect(() => {
@@ -249,81 +259,56 @@ export default function App() {
     1000
   );
 
-  // Sync combat log from server (authoritative source)
+  // Sync combat log from server (authoritative source). Prefer server-rendered combat_log_display.
   useEffect(() => {
     if (!gameState || !me) return;
-    
-    // Convert server events to display messages
+
+    const display = gameState.combat_log_display;
+    if (Array.isArray(display) && display.length > 0) {
+      const withTimestamp = display.map((entry, idx) => ({
+        ...entry,
+        message: entry.message,
+        tone: entry.tone,
+        isMyAction: entry.is_my_action === true || entry.isMyAction === true,
+        timestamp: Date.now() - (display.length - idx) * 1000,
+      }));
+      setCombatLog(withTimestamp.slice().reverse());
+      return;
+    }
+
+    // Fallback: build from combat_log (older API)
     const serverLog = gameState.combat_log || [];
     const myId = me.id;
-    
-    // Build messages from server events
     const messages = serverLog.map((event, idx) => {
-      const getDisplayName = (userId, username) => {
-        if (!userId) return "Opponent";
-        if (userId === myId) return "You";
-        return username || `Player ${userId}`;
-      };
-      
-      // Determine if this is the current user's action
       const actorId = event.actor_id || event.attacker_id;
       const isMyAction = actorId === myId;
-      
-      const actionType = event.action_type;
-      
-      if (actionType === "attack" || actionType === "power_strike" || actionType === "arcane_blast") {
-        const attackerName = getDisplayName(event.attacker_id, event.attacker_username);
-        const defenderName = getDisplayName(event.defender_id, event.defender_username);
-        const dmg = event.damage ?? 0;
-        const defended = event.defended === true;
-        const extra = defended ? " (blocked, reduced damage)" : "";
-        let attackType = "";
-        if (actionType === "power_strike") attackType = " with Power Strike";
-        else if (actionType === "arcane_blast") attackType = " with Arcane Blast";
-        return { 
-          message: `${attackerName} dealt ${dmg} damage to ${defenderName}${attackType}${extra}.`, 
-          tone: "damage",
-          isMyAction,
-          timestamp: Date.now() - (serverLog.length - idx) * 1000
-        };
+      const actionKey = event.action_key || event.action_type;
+      const label = humanize(actionKey);
+      if (event.damage != null && (event.attacker_id != null || event.defender_id != null)) {
+        const att = event.attacker_id === myId ? "You" : (event.attacker_username || `Player ${event.attacker_id}`);
+        const def = event.defender_id === myId ? "You" : (event.defender_username || `Player ${event.defender_id}`);
+        const extra = event.defended ? " (blocked, reduced damage)" : "";
+        return { message: `${att} dealt ${event.damage} damage to ${def} with ${label}.${extra}`, tone: "damage", isMyAction, timestamp: Date.now() - (serverLog.length - idx) * 1000 };
       }
-      
-      if (actionType === "heal" || actionType === "rejuvenate") {
-        const actorName = getDisplayName(event.actor_id, event.actor_username);
-        const healed = event.healed ?? 0;
-        const abilityName = actionType === "rejuvenate" ? " with Rejuvenate" : "";
-        return { 
-          message: `${actorName} healed for ${healed} HP${abilityName}.`, 
-          tone: "heal",
-          isMyAction,
-          timestamp: Date.now() - (serverLog.length - idx) * 1000
-        };
+      if (event.healed != null && event.actor_id != null) {
+        const actor = event.actor_id === myId ? "You" : (event.actor_username || `Player ${event.actor_id}`);
+        return { message: `${actor} healed ${event.healed} HP with ${label}.`, tone: "heal", isMyAction, timestamp: Date.now() - (serverLog.length - idx) * 1000 };
       }
-      
-      if (actionType === "defend") {
-        const actorName = getDisplayName(event.actor_id, event.actor_username);
-        return { 
-          message: `${actorName} is blocking. Next attack will be reduced by 50%.`, 
-          tone: "defend",
-          isMyAction,
-          timestamp: Date.now() - (serverLog.length - idx) * 1000
-        };
+      if (event.action_type === "defend" || event.action_type === "shield_wall") {
+        const actor = event.actor_id === myId ? "You" : (event.actor_username || `Player ${event.actor_id}`);
+        return { message: `${actor} used ${label}. Next incoming hit will be reduced by 50%.`, tone: "defend", isMyAction, timestamp: Date.now() - (serverLog.length - idx) * 1000 };
       }
-      
-      // Fallback
-      const actorName = getDisplayName(event.actor_id || event.attacker_id, event.actor_username || event.attacker_username);
-      return { 
-        message: `${actorName} used ${actionType}.`, 
-        tone: "neutral",
-        isMyAction,
-        timestamp: Date.now() - (serverLog.length - idx) * 1000
-      };
+      if (event.action_type === "dot_tick") {
+        const target = event.target_id === myId ? "You" : (event.target_username || `Player ${event.target_id}`);
+        const effectName = humanize(event.effect || "unknown");
+        const turns = event.turns_left ?? 0;
+        return { message: `${target} took ${event.damage ?? 0} ${effectName} damage from ${effectName} (${turns} turn${turns !== 1 ? "s" : ""} remaining).`, tone: "damage", isMyAction: event.target_id === myId, timestamp: Date.now() - (serverLog.length - idx) * 1000 };
+      }
+      const actor = (event.actor_id ?? event.attacker_id) === myId ? "You" : (event.actor_username || event.attacker_username || "Unknown");
+      return { message: `${actor} used ${label}.`, tone: "neutral", isMyAction, timestamp: Date.now() - (serverLog.length - idx) * 1000 };
     });
-    
-    // Update combat log from server (authoritative source)
-    // Reverse order so newest events appear at top
     setCombatLog(messages.slice().reverse());
-  }, [gameState?.combat_log, gameState?.turn_number, me?.id]);
+  }, [gameState?.combat_log, gameState?.combat_log_display, gameState?.turn_number, me?.id]);
 
   // When match finishes, ensure both clients have refreshed stats
   // Stats are now included in match state, but we still refetch /auth/me as backup
@@ -349,49 +334,43 @@ export default function App() {
 
   async function joinMatchmaking() {
     setError("");
+    setMmInFlight(true);
     setMmStatus(null);
     setMatch(null);
     setGameState(null);
     setCombatLog([]);
-
     try {
       const data = await apiFetch("/matchmaking/join", {
         method: "POST",
         token,
       });
-
       setMmStatus(data.status);
-
       if (data.status === "matched" && data.match) {
         setMatch(data.match);
         const state = await refreshMatchState(data.match.id);
-        // Load usernames immediately
         if (state) {
           loadUsername(state.player1_id);
           loadUsername(state.player2_id);
         }
       }
     } catch (e) {
-      setError(`${e.message}${e.status ? ` (HTTP ${e.status})` : ""}`);
+      setError(e.message + (e.status ? " (HTTP " + e.status + ")" : ""));
       setMmStatus("error");
+    } finally {
+      setMmInFlight(false);
     }
   }
 
   async function leaveMatchmaking() {
     setError("");
+    setMmInFlight(true);
     try {
       await apiFetch("/matchmaking/leave", { method: "POST", token });
       setMmStatus(null);
     } catch (e) {
-      setError(`${e.message}${e.status ? ` (HTTP ${e.status})` : ""}`);
-    }
-  }
-
-  async function toggleMatchmaking() {
-    if (mmStatus === "waiting") {
-      await leaveMatchmaking();
-    } else {
-      await joinMatchmaking();
+      setError(e.message + (e.status ? " (HTTP " + e.status + ")" : ""));
+    } finally {
+      setMmInFlight(false);
     }
   }
 
@@ -399,13 +378,11 @@ export default function App() {
     if (!match) return;
     setError("");
     try {
-      await apiFetch(`/matches/${match.id}/forfeit`, { method: "POST", token });
-      setMatch(null);
-      setGameState(null);
-      setCombatLog([]);
+      await apiFetch("/matches/" + match.id + "/forfeit", { method: "POST", token });
+      await refreshMatchState(match.id);
       setMmStatus(null);
     } catch (e) {
-      setError(`${e.message}${e.status ? ` (HTTP ${e.status})` : ""}`);
+      setError(e.message + (e.status ? " (HTTP " + e.status + ")" : ""));
     }
   }
 
@@ -414,7 +391,7 @@ export default function App() {
       const data = await apiFetch("/matches/history?limit=25", { token });
       setHistory(data || []);
     } catch (e) {
-      setError(`${e.message}${e.status ? ` (HTTP ${e.status})` : ""}`);
+      setError(e.message + (e.status ? " (HTTP " + e.status + ")" : ""));
     }
   }
 
@@ -425,7 +402,7 @@ export default function App() {
     setActionInFlight(true);
     
     try {
-      const data = await apiFetch(`/matches/${match.id}/action`, {
+      const data = await apiFetch("/matches/" + match.id + "/action", {
         method: "POST",
         token,
         body: { action },
@@ -439,12 +416,13 @@ export default function App() {
       // Flash health bar on damage/heal
       if (data.result) {
         const resultWithAction = { ...data.result, action: data.action || data.result.action };
-        
-        if (action === "attack" || action === "power_strike" || action === "arcane_blast") {
+        const isDamage = "damage" in resultWithAction && resultWithAction.damage != null;
+        const isHeal = "healed" in resultWithAction && resultWithAction.healed != null;
+        if (isDamage) {
           const isP1 = resultWithAction.attacker_id === gameState.player1_id;
           setHealthFlash(isP1 ? { p1: "#f44336", p2: null } : { p1: null, p2: "#f44336" });
           setTimeout(() => setHealthFlash({ p1: null, p2: null }), 300);
-        } else if (action === "heal" || action === "rejuvenate") {
+        } else if (isHeal) {
           const isP1 = resultWithAction.actor_id === gameState.player1_id;
           setHealthFlash(isP1 ? { p1: "#4caf50", p2: null } : { p1: null, p2: "#4caf50" });
           setTimeout(() => setHealthFlash({ p1: null, p2: null }), 300);
@@ -455,7 +433,7 @@ export default function App() {
       await refreshMatchState(match.id);
       
     } catch (e) {
-      setError(`${e.message}${e.status ? ` (HTTP ${e.status})` : ""}`);
+      setError(e.message + (e.status ? " (HTTP " + e.status + ")" : ""));
     } finally {
       setActionInFlight(false);
     }
@@ -475,8 +453,8 @@ export default function App() {
     }
     // Fallback to computed value (should not happen with new backend)
     if (!userInfo || !userInfo.class_name) return 100;
-    const baseHp = { warrior: 130, mage: 75, druid: 105 };
-    const hpPerLevel = { warrior: 14, mage: 7, druid: 11 };
+    const baseHp = { warrior: 130, mage: 75, druid: 105, rogue: 90 };
+    const hpPerLevel = { warrior: 14, mage: 7, druid: 11, rogue: 9 };
     return baseHp[userInfo.class_name] + (hpPerLevel[userInfo.class_name] * (userInfo.level - 1));
   };
 
@@ -492,8 +470,9 @@ export default function App() {
   const p2Info = userInfoMap[gameState?.player2_id];
   const myInfo = userInfoMap[myId];
   
-  // Get ability cooldown for current player
-  const myCooldown = isPlayer1 ? gameState?.player1_ability_cooldown : gameState?.player2_ability_cooldown;
+  // Per-ability cooldowns and action tooltip stats for current player
+  const myCooldowns = isPlayer1 ? (gameState?.player1_cooldowns || {}) : (gameState?.player2_cooldowns || {});
+  const myActionTooltips = isPlayer1 ? (gameState?.player1_action_tooltips || {}) : (gameState?.player2_action_tooltips || {});
 
   // Get winner username from map
   const winnerUsername = useMemo(() => {
@@ -501,32 +480,21 @@ export default function App() {
     return getUsername(winnerId, usernameMap);
   }, [winnerId, usernameMap]);
 
-  // Debug logging for winner_id (temporary)
-  useEffect(() => {
-    if (status === "finished" && gameState) {
-      console.log("[DEBUG] Match finished - game_state:", {
-        winner_id: gameState.winner_id,
-        player1_id: gameState.player1_id,
-        player2_id: gameState.player2_id,
-        player1_health: gameState.player1_health,
-        player2_health: gameState.player2_health,
-        usernameMap,
-        winnerUsername,
-      });
-    }
-  }, [status, gameState, usernameMap, winnerUsername]);
-
   return (
     <div style={{ 
       fontFamily: "system-ui, -apple-system, sans-serif", 
       padding: 20, 
-      maxWidth: 1000, 
-      margin: "0 auto",
-      backgroundColor: "#121212",
+      width: "100%",
+      minWidth: "100vw",
       minHeight: "100vh",
-      color: "white"
+      boxSizing: "border-box",
+      backgroundColor: "#0d0d0d",
+      color: "white",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "stretch",
     }}>
-      <h1 style={{ textAlign: "center", marginBottom: 24, color: "white" }}>⚔️ PvP Arena</h1>
+      <h1 style={{ textAlign: "center", marginBottom: 24, color: "white", flexShrink: 0 }}>⚔️ PvP Arena</h1>
 
       {!isAuthed ? (
         <AuthPanel
@@ -549,7 +517,7 @@ export default function App() {
           error={error}
         />
       ) : (
-        <div style={{ display: "grid", gap: 20 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1, minHeight: 0 }}>
           <HeaderBar
             username={me?.username || "Unknown"}
             className={me?.class_name}
@@ -559,11 +527,17 @@ export default function App() {
               setShowHistory(!showHistory); 
               if (!showHistory) loadHistory(); 
             }}
+            showLeaderboard={showLeaderboard}
+            onToggleLeaderboard={() => setShowLeaderboard(!showLeaderboard)}
             onLogout={handleLogout}
           />
 
           {showHistory && (
             <MatchHistory history={history} onRefresh={loadHistory} />
+          )}
+
+          {showLeaderboard && (
+            <Leaderboard token={token} onClose={() => setShowLeaderboard(false)} />
           )}
 
           {!match ? (
@@ -577,22 +551,22 @@ export default function App() {
               }}>
                 <h2 style={{ marginTop: 0, color: "white" }}>Matchmaking</h2>
                 <button
-                  onClick={toggleMatchmaking}
-                  disabled={mmStatus === "waiting"}
+                  onClick={mmStatus === "waiting" ? leaveMatchmaking : joinMatchmaking}
+                  disabled={mmInFlight}
                   style={{
-                    backgroundColor: mmStatus === "waiting" ? "#4a5568" : "#28a745",
+                    backgroundColor: mmInFlight ? "#4a5568" : mmStatus === "waiting" ? "#dc3545" : "#28a745",
                     color: "white",
                     border: "none",
                     padding: "12px 24px",
                     borderRadius: "6px",
                     fontSize: "16px",
                     fontWeight: "bold",
-                    cursor: mmStatus === "waiting" ? "not-allowed" : "pointer",
+                    cursor: mmInFlight ? "not-allowed" : "pointer",
                   }}
                 >
-                  {mmStatus === "waiting" ? "Searching for opponent..." : "Join Matchmaking"}
+                  {mmInFlight ? "..." : mmStatus === "waiting" ? "Leave Matchmaking" : "Join Matchmaking"}
                 </button>
-                {mmStatus === "waiting" && (
+                {mmStatus === "waiting" && !mmInFlight && (
                   <div style={{ marginTop: 12, color: "#999" }}>
                     <div>⏳ Waiting for opponent...</div>
                   </div>
@@ -611,119 +585,35 @@ export default function App() {
               ) : null}
             </>
           ) : (
-            <div style={{ display: "grid", gap: 20 }}>
-              <MatchBanner 
-                status={status} 
-                winnerUsername={winnerUsername}
-                winnerId={winnerId}
-              />
-
-              {/* Player Panels */}
-              {gameState && (
-                <div style={{ display: "flex", gap: 16 }}>
-                  <PlayerCard
-                    playerId={gameState.player1_id}
-                    username={getUsername(gameState.player1_id, usernameMap)}
-                    health={gameState.player1_health}
-                    maxHealth={getMaxHp(gameState.player1_id, p1Info, gameState)}
-                    isActive={status === "active" && currentTurn === gameState.player1_id}
-                    isMe={isPlayer1}
-                    flashColor={healthFlash.p1}
-                    className={p1Info?.class_name}
-                    level={p1Info?.level}
-                    xp={p1Info?.xp}
-                  />
-                  <div style={{ display: "flex", alignItems: "center", fontSize: "24px", fontWeight: "bold", color: "#666" }}>
-                    VS
-                  </div>
-                  <PlayerCard
-                    playerId={gameState.player2_id}
-                    username={getUsername(gameState.player2_id, usernameMap)}
-                    health={gameState.player2_health}
-                    maxHealth={getMaxHp(gameState.player2_id, p2Info, gameState)}
-                    isActive={status === "active" && currentTurn === gameState.player2_id}
-                    isMe={!isPlayer1}
-                    flashColor={healthFlash.p2}
-                    className={p2Info?.class_name}
-                    level={p2Info?.level}
-                    xp={p2Info?.xp}
-                  />
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              {status === "active" && (
-                <ActionBar 
-                  canAct={canAct}
-                  inFlight={actionInFlight}
-                  onAction={doAction}
-                  className={myInfo?.class_name}
-                  abilityCooldown={myCooldown || 0}
-                />
-              )}
-
-              {status === "finished" && (
-                <div style={{ textAlign: "center", padding: 20 }}>
-                  <div style={{ fontSize: "18px", marginBottom: 12, color: "white" }}>
-                    Match Over
-                  </div>
-                  <button
-                    onClick={() => {
-                      setMatch(null);
-                      setGameState(null);
-                      setCombatLog([]);
-                      setMmStatus(null);
-                      setHasRefreshedForFinish(false);
-                    }}
-                    style={{
-                      backgroundColor: "#28a745",
-                      color: "white",
-                      border: "none",
-                      padding: "12px 24px",
-                      borderRadius: "6px",
-                      fontSize: "16px",
-                      fontWeight: "bold",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Return to Matchmaking
-                  </button>
-                </div>
-              )}
-
-              {/* Combat Log */}
-              <CombatLog entries={combatLog} />
-
-              {status === "active" && (
-                <div style={{ textAlign: "center" }}>
-                  <button
-                    onClick={forfeitMatch}
-                    style={{
-                      backgroundColor: "#dc3545",
-                      color: "white",
-                      border: "none",
-                      padding: "8px 16px",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Forfeit Match
-                  </button>
-                </div>
-              )}
-
-              {error ? (
-                <div style={{ 
-                  color: "#ff6b6b", 
-                  padding: 12, 
-                  backgroundColor: "#2d1b1b", 
-                  borderRadius: 8,
-                  border: "1px solid #5a2a2a"
-                }}>
-                  {error}
-                </div>
-              ) : null}
-            </div>
+            <GameLayout
+              gameState={gameState}
+              status={status}
+              winnerUsername={winnerUsername}
+              winnerId={winnerId}
+              usernameMap={usernameMap}
+              userInfoMap={userInfoMap}
+              getUsername={getUsername}
+              getMaxHp={getMaxHp}
+              healthFlash={healthFlash}
+              isPlayer1={isPlayer1}
+              currentTurn={currentTurn}
+              canAct={canAct}
+              actionInFlight={actionInFlight}
+              onAction={doAction}
+              myInfo={myInfo}
+              myCooldowns={myCooldowns}
+              actionTooltips={myActionTooltips}
+              combatLog={combatLog}
+              onReturnToMatchmaking={() => {
+                setMatch(null);
+                setGameState(null);
+                setCombatLog([]);
+                setMmStatus(null);
+                setHasRefreshedForFinish(false);
+              }}
+              onForfeit={forfeitMatch}
+              error={error}
+            />
           )}
         </div>
       )}

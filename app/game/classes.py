@@ -10,33 +10,43 @@ from app.db.models import User, Match
 # - Warrior: Tanky, moderate damage, weaker burst
 # - Mage: Squishy, highest burst ability
 # - Druid: Mid HP, best sustain/healing
+# - Rogue: High tempo/burst, lower HP than warrior, evasion/utility
 CLASS_STATS = {
     "warrior": {
         "base_hp": 130,  # Highest HP pool
         "hp_per_level": 14,  # Good scaling
-        "base_attack_min": 11,  # Reduced from 12
-        "base_attack_max": 20,  # Reduced from 22
+        "base_attack_min": 11,
+        "base_attack_max": 20,
         "attack_per_level": 2,
-        "base_heal": 11,  # Reduced from 12
+        "base_heal": 11,
         "heal_per_level": 1,
     },
     "mage": {
         "base_hp": 75,  # Lowest HP pool
-        "hp_per_level": 7,  # Lower scaling
-        "base_attack_min": 16,  # Increased from 15
-        "base_attack_max": 26,  # Increased from 25
-        "attack_per_level": 3,  # Best attack scaling
-        "base_heal": 9,  # Reduced from 10
+        "hp_per_level": 7,
+        "base_attack_min": 16,
+        "base_attack_max": 25,
+        "attack_per_level": 3,
+        "base_heal": 9,
         "heal_per_level": 1,
     },
     "druid": {
         "base_hp": 105,  # Mid HP pool
-        "hp_per_level": 11,  # Good scaling
+        "hp_per_level": 11,
         "base_attack_min": 10,
-        "base_attack_max": 19,  # Slightly reduced from 20
+        "base_attack_max": 19,
         "attack_per_level": 2,
-        "base_heal": 15,  # Increased from 18 - best base heal
-        "heal_per_level": 2,  # Best heal scaling
+        "base_heal": 15,  # Best base heal
+        "heal_per_level": 2,
+    },
+    "rogue": {
+        "base_hp": 90,  # Lower than warrior, evasion-focused
+        "hp_per_level": 9,
+        "base_attack_min": 14,  # High tempo burst
+        "base_attack_max": 24,
+        "attack_per_level": 3,
+        "base_heal": 8,
+        "heal_per_level": 1,
     },
 }
 
@@ -68,8 +78,8 @@ def get_heal_amount(user: User) -> int:
 
 
 def get_xp_needed_for_level(level: int) -> int:
-    """Calculate XP needed to reach the next level."""
-    return 100 * level
+    """XP required to gain one level (flat 100 per level)."""
+    return 100
 
 
 def award_xp(user: User, amount: int, db) -> Dict[str, int]:

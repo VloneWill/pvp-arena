@@ -15,7 +15,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=8, max_length=72)
-    class_name: Literal["warrior", "mage", "druid"] = Field(..., description="Player class: warrior, mage, or druid")
+    class_name: Literal["warrior", "mage", "druid", "rogue"] = Field(..., description="Player class: warrior, mage, druid, or rogue (locked after registration)")
 
 
 #create the login request schema
