@@ -48,7 +48,7 @@ export default function GameLayout({
       />
 
       {gameState && (
-        <div style={{ display: "flex", gap: 16, flexShrink: 0 }}>
+        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr auto 1fr" }}>
           <PlayerCard
             playerId={gameState.player1_id}
             username={getUsername(gameState.player1_id, usernameMap)}

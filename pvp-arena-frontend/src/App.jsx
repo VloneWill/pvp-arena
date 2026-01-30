@@ -482,6 +482,8 @@ export default function App() {
 
   return (
     <div style={{ 
+      maxWidth: "560px",
+      margin: "0 auto",
       fontFamily: "system-ui, -apple-system, sans-serif", 
       padding: 20, 
       width: "100%",
