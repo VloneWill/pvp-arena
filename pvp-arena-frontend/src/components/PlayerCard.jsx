@@ -11,7 +11,7 @@ function HealthBar({ current, max, isActive, flashColor }) {
   else if (percentage < 60) barColor = "#ff9800"; // yellow
 
   return (
-    <div style={{ position: "relative", width: "100%", minWidth: 0 }}>
+    <div style={{ position: "relative", width: "100%", height: "100%", minWidth: 0 }}>
       <div
         style={{
           width: "100%",
