@@ -73,6 +73,7 @@ export function buildEffectTooltipContent(effect) {
         stats.summary = "Next " + n + " hit(s) reduced by " + stats.reduction_pct + "%; reflect " + stats.reflect_pct + "% of reduced amount. Does not expire if unused.";
       }
       else if (stats.avoid_pct != null) stats.summary = "Avoids " + stats.avoid_pct + "% of next hit. Does not expire if unused.";
+      else if (name === "defend") stats.summary = "Reduces damage of next hit by 50%. Does not expire if unused.";
       else stats.summary = "1 hit. Does not expire if unused.";
     } else if (stats.damage_taken_pct != null) stats.summary = "Target takes " + stats.damage_taken_pct + "% more damage until end of your next turn. " + (turns != null ? turns + " turn(s) left." : "");
     else if (stats.shield_amount != null) stats.summary = "Absorbs up to " + stats.shield_amount + " damage until end of your next turn. " + (turns != null ? turns + " turn(s) left." : "");

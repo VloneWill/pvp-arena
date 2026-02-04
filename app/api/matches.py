@@ -214,8 +214,13 @@ def get_game_state(
     
     p1_cooldowns = getattr(match, "player1_cooldowns", None) or {}
     p2_cooldowns = getattr(match, "player2_cooldowns", None) or {}
-    p1_effects = getattr(match, "player1_effects", None) or []
-    p2_effects = getattr(match, "player2_effects", None) or []
+    p1_effects = list(getattr(match, "player1_effects", None) or [])
+    p2_effects = list(getattr(match, "player2_effects", None) or [])
+    # Expose standard Defend as a player-card effect (1 hit) so the UI can show it
+    if getattr(match, "player1_defending", False):
+        p1_effects = [*p1_effects, {"name": "defend", "hits_left": 1}]
+    if getattr(match, "player2_defending", False):
+        p2_effects = [*p2_effects, {"name": "defend", "hits_left": 1}]
 
     from app.game.tooltip_stats import compute_action_tooltips
     p1_class = p1.class_name if p1 else None
