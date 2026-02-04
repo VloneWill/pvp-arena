@@ -18,14 +18,14 @@ export default function MatchHistoryItem({ match }) {
     }}>
       {/* Result badge */}
       <div style={{
-        padding: "6px 12px",
+        padding: "4px 8px",
         backgroundColor: resultBg,
         color: resultColor,
         borderRadius: 6,
         fontWeight: "bold",
-        fontSize: "12px",
+        fontSize: "11px",
         textTransform: "uppercase",
-        minWidth: 70,
+        minWidth: 52,
         textAlign: "center"
       }}>
         {result}
