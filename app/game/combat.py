@@ -3,6 +3,7 @@ Turn-based combat logic with class-based stats and data-driven abilities.
 Uses app.game.abilities for definitions; no giant if/else chains.
 """
 import random
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -19,6 +20,46 @@ from app.game.abilities import get_ability, get_cooldown_turns
 
 # Combat constants
 DEFEND_DAMAGE_REDUCTION = 0.5  # 50% damage reduction
+TURN_DURATION_SECONDS = 30
+
+
+def _now_utc() -> datetime:
+    """Current time in UTC for turn timers."""
+    return datetime.now(timezone.utc)
+
+
+def _set_turn_timers(match: Match, now: Optional[datetime] = None) -> None:
+    """Set turn_started_at and turn_expires_at for the current turn."""
+    if now is None:
+        now = _now_utc()
+    match.turn_started_at = now
+    match.turn_expires_at = now + timedelta(seconds=TURN_DURATION_SECONDS)
+
+
+def apply_turn_timeout_if_needed(match: Match, now: Optional[datetime] = None) -> None:
+    """
+    If the match is active and the current turn has expired, switch turn to the
+    other player and reset turn timers. No match history or forfeit; turn switch only.
+    Caller must commit the session after this if changes were made.
+    """
+    if match.status != "active":
+        return
+    if now is None:
+        now = _now_utc()
+    if match.turn_expires_at is None:
+        _set_turn_timers(match, now)
+        return
+    expires = match.turn_expires_at
+    if getattr(expires, "tzinfo", None) is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if now <= expires:
+        return
+    # Expired: switch turn and reset timers
+    if match.current_turn == match.player1_id:
+        match.current_turn = match.player2_id
+    else:
+        match.current_turn = match.player1_id
+    _set_turn_timers(match, now)
 
 
 #create the invalid action error class
@@ -234,7 +275,8 @@ def initialize_match(match: Match, db: Session) -> None:
     if match.current_turn is None:
         match.current_turn = match.player1_id
         match.turn_number = 1
-        
+        _set_turn_timers(match)
+
         # Get players and compute max HP (single source of truth)
         p1 = _get_user_for_player(match, match.player1_id, db)
         p2 = _get_user_for_player(match, match.player2_id, db)
@@ -821,6 +863,7 @@ def advance_turn(match: Match) -> None:
         match.current_turn = match.player2_id
     else:
         match.current_turn = match.player1_id
+    _set_turn_timers(match)
 
 
 #create the check match end function

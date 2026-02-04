@@ -1,4 +1,5 @@
 #imports for the auth router
+import re
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -7,8 +8,33 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password, verify_password, create_access_token, get_current_user_id
 from app.db.database import get_db
 from app.db.models import User
+from app.utils.username_filter import is_disallowed_username
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Username rules: 3-20 chars, letters/numbers/underscore only
+USERNAME_MIN_LEN = 3
+USERNAME_MAX_LEN = 20
+USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
+
+
+def _normalize_username(raw: str) -> str:
+    """Trim and collapse internal spaces (remove spaces so only letters/numbers/underscore allowed)."""
+    return re.sub(r"\s+", "", raw.strip())
+
+
+def _validate_username(username: str) -> None:
+    """Raise HTTPException if username fails length or character rules."""
+    if len(username) < USERNAME_MIN_LEN or len(username) > USERNAME_MAX_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Username must be between {USERNAME_MIN_LEN} and {USERNAME_MAX_LEN} characters",
+        )
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise HTTPException(
+            status_code=400,
+            detail="Username may only contain letters, numbers, and underscores",
+        )
 
 
 #create the register request schema
@@ -33,9 +59,12 @@ class TokenResponse(BaseModel):
 #create the register endpoint
 @router.post("/register", status_code=201)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
-    # class_name is already validated by Pydantic Literal, so no need for manual validation
-    
-    existing = db.query(User).filter(User.username == payload.username).first()
+    username = _normalize_username(payload.username)
+    _validate_username(username)
+    if is_disallowed_username(username):
+        raise HTTPException(status_code=400, detail="Username contains disallowed language.")
+
+    existing = db.query(User).filter(User.username == username).first()
     if existing:
         raise HTTPException(status_code=409, detail="Username already exists")
 
@@ -45,7 +74,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
     user = User(
-        username=payload.username, 
+        username=username,
         password_hash=pw_hash,
         class_name=payload.class_name,
         level=1,

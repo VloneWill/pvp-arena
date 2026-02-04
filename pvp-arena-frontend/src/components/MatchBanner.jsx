@@ -1,4 +1,24 @@
-export default function MatchBanner({ status, winnerUsername, winnerId }) {
+import { useEffect, useState } from "react";
+
+export default function MatchBanner({ status, winnerUsername, winnerId, turnExpiresAt }) {
+  const [turnSecondsLeft, setTurnSecondsLeft] = useState(null);
+
+  useEffect(() => {
+    if (status !== "active" || !turnExpiresAt) {
+      setTurnSecondsLeft(null);
+      return;
+    }
+    const update = () => {
+      const end = new Date(turnExpiresAt).getTime();
+      const now = Date.now();
+      const left = Math.max(0, Math.ceil((end - now) / 1000));
+      setTurnSecondsLeft(left);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [status, turnExpiresAt]);
+
   const getBannerStyle = () => {
     if (status === "finished") {
       return {
@@ -38,7 +58,12 @@ export default function MatchBanner({ status, winnerUsername, winnerId }) {
           🏆 Match Finished! Winner: <b style={{ color: "white" }}>{winnerUsername || `Player ${winnerId}` || "Unknown"}</b>
         </div>
       ) : status === "active" ? (
-        <div>⚔️ Match in Progress</div>
+        <div>
+          ⚔️ Match in Progress
+          {turnSecondsLeft != null && (
+            <span style={{ marginLeft: 10, opacity: 0.9 }}>Turn: {turnSecondsLeft}s</span>
+          )}
+        </div>
       ) : (
         <div>⏳ Waiting for opponent</div>
       )}

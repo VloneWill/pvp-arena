@@ -33,6 +33,7 @@ export default function App() {
   const [hasRefreshedForFinish, setHasRefreshedForFinish] = useState(false);
 
   const [error, setError] = useState("");
+  const [usernameError, setUsernameError] = useState("");
 
   const isAuthed = useMemo(() => Boolean(token), [token]);
 
@@ -145,6 +146,7 @@ export default function App() {
 
   async function handleRegister() {
     setError("");
+    setUsernameError("");
     if (!className) {
       setError("Please select a class");
       return;
@@ -156,7 +158,12 @@ export default function App() {
       });
       await handleLogin();
     } catch (e) {
-      setError(e.message || "Registration failed");
+      const msg = e.message || "Registration failed";
+      if (msg === "Username contains disallowed language.") {
+        setUsernameError(msg);
+      } else {
+        setError(msg);
+      }
     }
   }
 
@@ -213,18 +220,28 @@ export default function App() {
   }, [gameState?.status, matchFinishedTime]);
   
   const shouldPoll = match?.id && (
-    gameState?.status === "active" || 
+    gameState?.status === "active" ||
     (gameState?.status === "finished" && matchFinishedTime && (Date.now() - matchFinishedTime < 5000))
   );
-  
+
+  async function pollTick(matchId) {
+    if (!matchId) return;
+    try {
+      const data = await apiFetch(`/matches/${matchId}/tick`, { method: "POST", token });
+      if (data.game_state) {
+        setGameState(data.game_state);
+        if (data.match) setMatch(data.match);
+      } else if (data.match) {
+        setMatch(data.match);
+        await refreshMatchState(matchId);
+      }
+    } catch (_) {}
+  }
+
   useMatchPolling(
     shouldPoll ? match.id : null,
-    () => {
-      if (match?.id) {
-        refreshMatchState(match.id).catch(() => {});
-      }
-    },
-    1000
+    () => pollTick(match?.id),
+    2500
   );
 
   // Polling for matchmaking (only when waiting)
@@ -503,6 +520,7 @@ export default function App() {
           setUsername={(val) => {
             setUsername(val);
             setError("");
+            setUsernameError("");
           }}
           password={password}
           setPassword={(val) => {
@@ -514,6 +532,7 @@ export default function App() {
           onLogin={handleLogin}
           onRegister={handleRegister}
           error={error}
+          usernameError={usernameError}
         />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1, minHeight: 0 }}>

@@ -1,4 +1,5 @@
 #imports for the matches router
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -17,6 +18,7 @@ from app.game.combat import (
     CombatEngine,
     InvalidActionError,
     MatchNotActiveError,
+    apply_turn_timeout_if_needed,
 )
 #create the matches router
 router = APIRouter(prefix="/matches", tags=["matches"])
@@ -89,17 +91,106 @@ def get_match(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    #get the match from the database
     match = db.query(Match).filter(Match.id == match_id).first()
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
 
-    #check if the user is in the match
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
-    #return the match
+    apply_turn_timeout_if_needed(match)
+    db.commit()
+    db.refresh(match)
     return match
+
+
+#create the tick endpoint (apply turn timeout and return current match state)
+@router.post("/{match_id}/tick")
+def match_tick(
+    match_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Apply server-authoritative turn timeout if needed; return current match state."""
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    if user_id not in (match.player1_id, match.player2_id):
+        raise HTTPException(status_code=403, detail="Not your match")
+
+    apply_turn_timeout_if_needed(match)
+    db.commit()
+    db.refresh(match)
+
+    if match.status != "active":
+        return {"match": match, "game_state": None}
+
+    from app.db.models import User
+    from app.game.classes import get_max_hp
+    from app.game.tooltip_stats import compute_action_tooltips
+    from app.game.schemas import PlayerStats
+
+    p1 = db.query(User).filter(User.id == match.player1_id).first()
+    p2 = db.query(User).filter(User.id == match.player2_id).first()
+    p1_stats = PlayerStats(level=p1.level, xp=p1.xp, class_name=p1.class_name) if p1 else None
+    p2_stats = PlayerStats(level=p2.level, xp=p2.xp, class_name=p2.class_name) if p2 else None
+    p1_max_hp = get_max_hp(p1) if p1 else 100
+    p2_max_hp = get_max_hp(p2) if p2 else 100
+    p1_health = min(match.player1_health, p1_max_hp)
+    p2_health = min(match.player2_health, p2_max_hp)
+    p1_cooldowns = getattr(match, "player1_cooldowns", None) or {}
+    p2_cooldowns = getattr(match, "player2_cooldowns", None) or {}
+    p1_effects = list(getattr(match, "player1_effects", None) or [])
+    p2_effects = list(getattr(match, "player2_effects", None) or [])
+    if getattr(match, "player1_defending", False):
+        p1_effects = [*p1_effects, {"name": "defend", "hits_left": 1}]
+    if getattr(match, "player2_defending", False):
+        p2_effects = [*p2_effects, {"name": "defend", "hits_left": 1}]
+    p1_class = p1.class_name if p1 else None
+    p2_class = p2.class_name if p2 else None
+    p1_level = p1.level if p1 else 1
+    p2_level = p2.level if p2 else 1
+    p1_action_tooltips = compute_action_tooltips(p1_class, p1_level, p1_cooldowns) if p1_class else {}
+    p2_action_tooltips = compute_action_tooltips(p2_class, p2_level, p2_cooldowns) if p2_class else {}
+    combat_log_events = match.combat_log or []
+    combat_log_display_list = [
+        CombatLogDisplayEntry(**build_display_entry(ev, user_id))
+        for ev in combat_log_events
+    ]
+    server_time = datetime.now(timezone.utc).isoformat()
+    game_state = GameStateOut(
+        match_id=match.id,
+        player1_id=match.player1_id,
+        player2_id=match.player2_id,
+        player1_health=p1_health,
+        player2_health=p2_health,
+        player1_max_hp=p1_max_hp,
+        player2_max_hp=p2_max_hp,
+        current_turn=match.current_turn,
+        turn_number=match.turn_number,
+        player1_defending=match.player1_defending,
+        player2_defending=match.player2_defending,
+        player1_ability_effect=match.player1_ability_effect,
+        player2_ability_effect=match.player2_ability_effect,
+        player1_ability_cooldown=match.player1_ability_cooldown,
+        player2_ability_cooldown=match.player2_ability_cooldown,
+        player1_cooldowns=p1_cooldowns,
+        player2_cooldowns=p2_cooldowns,
+        player1_effects=p1_effects,
+        player2_effects=p2_effects,
+        status=match.status,
+        winner_id=match.winner_id,
+        combat_log=match.combat_log or [],
+        combat_log_display=combat_log_display_list,
+        player1_stats=p1_stats,
+        player2_stats=p2_stats,
+        player1_action_tooltips=p1_action_tooltips,
+        player2_action_tooltips=p2_action_tooltips,
+        turn_expires_at=getattr(match, "turn_expires_at", None),
+        server_time=server_time,
+    )
+    return {"match": match, "game_state": game_state}
 
 
 #create the end match endpoint
@@ -145,6 +236,10 @@ def forfeit_match(
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
+    apply_turn_timeout_if_needed(match)
+    db.commit()
+    db.refresh(match)
+
     if match.status != "active":
         raise HTTPException(status_code=409, detail="Match is not active")
 
@@ -169,7 +264,6 @@ def get_game_state(
     user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    #get the match from the database
     match = db.query(Match).filter(Match.id == match_id).first()
     if not match:
         raise HTTPException(status_code=404, detail="Match not found")
@@ -177,7 +271,10 @@ def get_game_state(
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
-    # Initialize match if not already initialized (only if match hasn't started)
+    apply_turn_timeout_if_needed(match)
+    db.commit()
+    db.refresh(match)
+
     if match.current_turn is None and match.turn_number == 0:
         initialize_match(match, db)
         db.commit()
@@ -264,6 +361,8 @@ def get_game_state(
         player2_stats=p2_stats,
         player1_action_tooltips=p1_action_tooltips,
         player2_action_tooltips=p2_action_tooltips,
+        turn_expires_at=getattr(match, "turn_expires_at", None),
+        server_time=datetime.now(timezone.utc).isoformat(),
     )
 
 #create the take action endpoint
@@ -281,7 +380,10 @@ def take_action(
     if user_id not in (match.player1_id, match.player2_id):
         raise HTTPException(status_code=403, detail="Not your match")
 
-    # Initialize match if not already initialized (only if match hasn't started)
+    apply_turn_timeout_if_needed(match)
+    db.commit()
+    db.refresh(match)
+
     if match.current_turn is None and match.turn_number == 0:
         initialize_match(match, db)
 
@@ -393,5 +495,7 @@ def take_action(
             player2_stats=p2_stats,
             player1_action_tooltips=p1_action_tooltips,
             player2_action_tooltips=p2_action_tooltips,
+            turn_expires_at=getattr(match, "turn_expires_at", None),
+            server_time=datetime.now(timezone.utc).isoformat(),
         ),
     }

@@ -1,4 +1,5 @@
 #imports for the schemas
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import Literal
 
@@ -10,6 +11,8 @@ class MatchOut(BaseModel):
     player2_id: int
     status: str
     winner_id: int | None = None
+    current_turn: int | None = None
+    turn_expires_at: datetime | None = None  # serialized as ISO in JSON
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -143,5 +146,7 @@ class GameStateOut(BaseModel):
     player2_stats: PlayerStats | None = None
     player1_action_tooltips: dict = {}  # action_id -> ActionTooltipStats-like dict
     player2_action_tooltips: dict = {}
+    turn_expires_at: datetime | None = None  # serialized as ISO for turn timer
+    server_time: str | None = None  # ISO timestamp for clock drift adjustment
 
     model_config = ConfigDict(from_attributes=True)

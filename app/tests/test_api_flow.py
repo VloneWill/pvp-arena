@@ -1,3 +1,6 @@
+from datetime import datetime, timezone, timedelta
+
+from app.db.models import Match
 from app.tests.helpers import auth_headers, my_user_id
 
 
@@ -278,6 +281,124 @@ class TestAPIFullFlow:
         assert "heal_amount" in p1_tooltips["heal"]
         assert "power_strike" in p1_tooltips
         assert "fireball" in p2_tooltips
+
+    def test_turn_timeout_tick_switches_turn(self, client, test_session_factory):
+        """When turn_expires_at is in the past, POST /tick switches turn and resets timer."""
+        h1 = auth_headers(client, "user1")
+        h2 = auth_headers(client, "user2")
+        id1 = my_user_id(client, h1)
+        id2 = my_user_id(client, h2)
+
+        client.post("/matchmaking/join", headers=h1)
+        r = client.post("/matchmaking/join", headers=h2)
+        match_id = r.json()["match"]["id"]
+        match_data = r.json()["match"]
+        p1_id = match_data["player1_id"]
+        p2_id = match_data["player2_id"]
+
+        db = test_session_factory()
+        try:
+            match = db.query(Match).filter(Match.id == match_id).first()
+            assert match is not None
+            match.current_turn = p1_id
+            past = datetime.now(timezone.utc) - timedelta(seconds=10)
+            match.turn_started_at = past
+            match.turn_expires_at = past
+            db.commit()
+        finally:
+            db.close()
+
+        r_tick = client.post(f"/matches/{match_id}/tick", headers=h1)
+        assert r_tick.status_code == 200
+        body = r_tick.json()
+        gs = body.get("game_state")
+        assert gs is not None
+        assert gs["current_turn"] == p2_id
+        assert "turn_expires_at" in gs
+        assert gs["turn_expires_at"] is not None
+        raw = gs["turn_expires_at"].replace("Z", "+00:00")
+        expires = datetime.fromisoformat(raw)
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        delta = (expires - now).total_seconds()
+        assert 25 <= delta <= 35
+
+    def test_turn_timeout_action_rejected_after_auto_switch(self, client, test_session_factory):
+        """When turn has expired, action by the old current player is rejected as not their turn."""
+        h1 = auth_headers(client, "user1")
+        h2 = auth_headers(client, "user2")
+        id1 = my_user_id(client, h1)
+        id2 = my_user_id(client, h2)
+
+        client.post("/matchmaking/join", headers=h1)
+        r = client.post("/matchmaking/join", headers=h2)
+        match_id = r.json()["match"]["id"]
+        match_data = r.json()["match"]
+        p1_id = match_data["player1_id"]
+
+        db = test_session_factory()
+        try:
+            match = db.query(Match).filter(Match.id == match_id).first()
+            match.current_turn = p1_id
+            past = datetime.now(timezone.utc) - timedelta(seconds=10)
+            match.turn_started_at = past
+            match.turn_expires_at = past
+            db.commit()
+        finally:
+            db.close()
+
+        p1_headers = h1 if id1 == p1_id else h2
+        r_action = client.post(
+            f"/matches/{match_id}/action",
+            headers=p1_headers,
+            json={"action": "attack"},
+        )
+        assert r_action.status_code == 400
+        assert "not your turn" in r_action.json().get("detail", "").lower() or "turn" in r_action.json().get("detail", "").lower()
+
+    def test_profanity_username_rejected(self, client):
+        """Registration with profane username returns 400 with disallowed language message."""
+        r = client.post(
+            "/auth/register",
+            json={"username": "shithead", "password": "password123", "class_name": "warrior"},
+        )
+        assert r.status_code == 400
+        assert r.json().get("detail") == "Username contains disallowed language."
+
+    def test_disallowed_username_embedded_and_leetspeak(self, client):
+        """Reject usernames with embedded offensive terms or leetspeak variants."""
+        for bad in ("pussykid", "pu55y_kid"):
+            r = client.post(
+                "/auth/register",
+                json={"username": bad, "password": "password123", "class_name": "warrior"},
+            )
+            assert r.status_code == 400, f"Expected 400 for username {bad!r}"
+            assert r.json().get("detail") == "Username contains disallowed language."
+
+    def test_allowed_username_accepted(self, client):
+        """Normal usernames are accepted."""
+        r = client.post(
+            "/auth/register",
+            json={"username": "player99", "password": "password123", "class_name": "warrior"},
+        )
+        assert r.status_code == 201
+        assert r.json().get("username") == "player99"
+
+    def test_username_length_and_chars_validated(self, client):
+        """Username must be 3-20 chars and letters/numbers/underscore only."""
+        r_short = client.post(
+            "/auth/register",
+            json={"username": "ab", "password": "password123", "class_name": "warrior"},
+        )
+        assert r_short.status_code in (400, 422)
+        r_bad = client.post(
+            "/auth/register",
+            json={"username": "bad-name", "password": "password123", "class_name": "warrior"},
+        )
+        assert r_bad.status_code == 400
+        detail = r_bad.json().get("detail", "").lower()
+        assert "letters" in detail or "underscore" in detail or "character" in detail
 
     # Note: Database wipe test would require testing against actual SQLite file
     # This is better tested manually or as an integration test since unit tests use in-memory DB

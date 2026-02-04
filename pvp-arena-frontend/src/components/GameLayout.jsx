@@ -45,6 +45,7 @@ export default function GameLayout({
         status={status}
         winnerUsername={winnerUsername}
         winnerId={winnerId}
+        turnExpiresAt={gameState?.turn_expires_at}
       />
 
       {gameState && (

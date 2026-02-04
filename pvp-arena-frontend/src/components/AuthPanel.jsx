@@ -1,4 +1,4 @@
-export default function AuthPanel({ mode, setMode, username, setUsername, password, setPassword, className, setClassName, onLogin, onRegister, error }) {
+export default function AuthPanel({ mode, setMode, username, setUsername, password, setPassword, className, setClassName, onLogin, onRegister, error, usernameError }) {
   return (
     <div style={{ 
       display: "grid", 
@@ -59,8 +59,10 @@ export default function AuthPanel({ mode, setMode, username, setUsername, passwo
             border: "1px solid #4a5568",
             borderRadius: 6
           }}
-           
         />
+        {usernameError ? (
+          <span style={{ color: "#ff6b6b", fontSize: "0.9em" }}>{usernameError}</span>
+        ) : null}
       </label>
 
       <label style={{ color: "white", display: "flex", flexDirection: "column", gap: 4 }}>

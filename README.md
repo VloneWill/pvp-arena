@@ -87,6 +87,19 @@ game-rule level and the API integration level.
 - Use controlled randomness via monkeypatch to make combat deterministic
 
 ---
+
+## Backend commands require venv
+
+All backend commands (running the server, migrations, tests) must be run with the project virtual environment activated. From the repo root:
+
+```bash
+source .venv/bin/activate
+```
+
+Then run `python -m ...`, `alembic ...`, `uvicorn ...`, or `pytest ...` as needed. The sections below assume the venv is active.
+
+---
+
 ## Configuration
 
 This project uses environment variables for configuration via pydantic-settings.
@@ -94,6 +107,10 @@ This project uses environment variables for configuration via pydantic-settings.
 Create a .env file from the example:
 
     cp .env.example .env
+
+### Username Moderation
+Usernames are validated server-side to prevent abusive or offensive language.  
+Registrations that violate these rules are rejected with a generic error message.
 
 ### Required variables
 
@@ -108,6 +125,7 @@ The application will default to a local SQLite database if DATABASE_URL is not s
 
 ### Running the server
 
+    source .venv/bin/activate
     uvicorn app.main:app --reload
 
 ### Environment variables and production redeploy
@@ -167,18 +185,20 @@ alembic upgrade head
 
 ## Running Tests
 
-pytest -v
+    source .venv/bin/activate
+    pytest -v
 
 Optional coverage:
 
-pytest --cov=app --cov-report=term-missing
+    pytest --cov=app --cov-report=term-missing
 
 ---
 
 ## Running Locally
 
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    uvicorn app.main:app --reload
 
 The API will be available at:
 http://127.0.0.1:8000/docs

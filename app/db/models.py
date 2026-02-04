@@ -31,7 +31,9 @@ class Match(Base):
 
     status = Column(String(20), nullable=False, default="active")  # active, finished, canceled
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    
+    turn_started_at = Column(DateTime(timezone=True), nullable=True)
+    turn_expires_at = Column(DateTime(timezone=True), nullable=True)
+
     # Game state
     player1_health = Column(Integer, nullable=False, default=100)
     player2_health = Column(Integer, nullable=False, default=100)
