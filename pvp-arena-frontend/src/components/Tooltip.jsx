@@ -21,7 +21,8 @@ const TOOLTIP_STYLE = {
   minWidth: 180,
   whiteSpace: "normal",
   pointerEvents: "auto",
-  maxHeight: "40vh",
+  /* px to avoid iOS viewport thrash when address bar shows/hides (was 40vh) */
+  maxHeight: 280,
   overflowY: "auto",
 };
 
@@ -81,29 +82,38 @@ export default function Tooltip({
   const containerRef = useRef(null);
   const tooltipRef = useRef(null);
   const [position, setPosition] = useState(null);
+  /** Ignore outside pointer events for this long after open (prevents iOS same-tap close) */
+  const openedAtRef = useRef(0);
 
   useEffect(() => {
     if (!open) return;
+    openedAtRef.current = Date.now();
+    // eslint-disable-next-line no-console -- temporary debug
+    console.log("[Tooltip] open state: true");
     const onEscape = (e) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        // eslint-disable-next-line no-console -- temporary debug
+        console.log("[Tooltip] close (escape)");
+        setOpen(false);
+      }
     };
-    const onClickOutside = (e) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target) &&
-        tooltipRef.current &&
-        !tooltipRef.current.contains(e.target)
-      ) {
+    const onPointerDownOutside = (e) => {
+      const now = Date.now();
+      if (now - openedAtRef.current < 350) return;
+      const isOutside =
+        containerRef.current && !containerRef.current.contains(e.target) &&
+        tooltipRef.current && !tooltipRef.current.contains(e.target);
+      if (isOutside) {
+        // eslint-disable-next-line no-console -- temporary debug
+        console.log("[Tooltip] outside-click fired", e.type, e.target);
         setOpen(false);
       }
     };
     document.addEventListener("keydown", onEscape);
-    document.addEventListener("mousedown", onClickOutside);
-    document.addEventListener("touchstart", onClickOutside, { passive: true });
+    document.addEventListener("pointerdown", onPointerDownOutside);
     return () => {
       document.removeEventListener("keydown", onEscape);
-      document.removeEventListener("mousedown", onClickOutside);
-      document.removeEventListener("touchstart", onClickOutside);
+      document.removeEventListener("pointerdown", onPointerDownOutside);
     };
   }, [open]);
 
@@ -149,6 +159,7 @@ export default function Tooltip({
       style={{ position: "relative", display: "inline-flex" }}
       onMouseEnter={showTooltip}
       onMouseLeave={hideTooltip}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       {typeof children === "function"
         ? children({ open, showTooltip, hideTooltip })
@@ -161,6 +172,7 @@ export default function Tooltip({
             ...TOOLTIP_STYLE,
             ...posStyle,
           }}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           {content}
         </span>

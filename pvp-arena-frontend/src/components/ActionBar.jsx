@@ -36,7 +36,10 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
   const disabled = !canAct || inFlight;
   const cooldowns = abilityCooldowns || {};
   const myActionTooltips = actionTooltips || {};
+  /** Which ability's confirm popup is open. Only close on user action (Use/cancel/outside); do not clear on timer or match polling. */
   const [tooltipAbilityId, setTooltipAbilityId] = useState(null);
+  /** Which basic action's tooltip is open (mobile: first tap = show, second tap or Use = execute). */
+  const [tooltipBasicActionId, setTooltipBasicActionId] = useState(null);
   const [turnSecondsLeft, setTurnSecondsLeft] = useState(null);
   const abilities = className ? CLASS_ABILITIES[className] : [];
   const lastActionTimeRef = useRef(0);
@@ -93,6 +96,27 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
     guardAndAction(ab.id, () => onAction(ab.id));
   };
 
+  const BASIC_ACTIONS = [
+    { id: "attack", emoji: "⚔️", label: "Attack", color: "#dc3545" },
+    { id: "defend", emoji: "🛡️", label: "Defend", color: "#0d6efd" },
+    { id: "heal", emoji: "❤️", label: "Heal", color: "#198754" },
+  ];
+
+  const handleBasicActionClick = (actionId) => {
+    if (disabled) return;
+    if (tooltipBasicActionId === actionId) {
+      setTooltipBasicActionId(null);
+      guardAndAction(actionId, () => onAction(actionId));
+    } else {
+      setTooltipBasicActionId(actionId);
+    }
+  };
+
+  const handleBasicActionUse = (actionId) => {
+    setTooltipBasicActionId(null);
+    guardAndAction(actionId, () => onAction(actionId));
+  };
+
   return (
     <div style={{
       padding: 20,
@@ -143,33 +167,50 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
         </div>
       </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-        <Tooltip content={buildActionTooltipContent("attack", myActionTooltips, "Attack")} placement="top">
-          <button
-            onClick={() => guardAndAction("attack", () => onAction("attack"))}
-            disabled={disabled}
-            style={buttonStyle("#dc3545")}
-          >
-            ⚔️ Attack
-          </button>
-        </Tooltip>
-        <Tooltip content={buildActionTooltipContent("defend", myActionTooltips, "Defend")} placement="top">
-          <button
-            onClick={() => guardAndAction("defend", () => onAction("defend"))}
-            disabled={disabled}
-            style={buttonStyle("#0d6efd")}
-          >
-            🛡️ Defend
-          </button>
-        </Tooltip>
-        <Tooltip content={buildActionTooltipContent("heal", myActionTooltips, "Heal")} placement="top">
-          <button
-            onClick={() => guardAndAction("heal", () => onAction("heal"))}
-            disabled={disabled}
-            style={buttonStyle("#198754")}
-          >
-            ❤️ Heal
-          </button>
-        </Tooltip>
+        {BASIC_ACTIONS.map((action) => {
+          const tooltipContent = (
+            <div>
+              {buildActionTooltipContent(action.id, myActionTooltips, action.label)}
+              {tooltipBasicActionId === action.id && !disabled && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handleBasicActionUse(action.id); }}
+                  style={{
+                    marginTop: 6,
+                    padding: "4px 10px",
+                    backgroundColor: action.color,
+                    color: "white",
+                    border: "none",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    fontSize: 11,
+                  }}
+                >
+                  Use
+                </button>
+              )}
+            </div>
+          );
+          return (
+            <Tooltip
+              key={action.id}
+              content={tooltipContent}
+              open={tooltipBasicActionId === action.id}
+              onOpenChange={(open) => { if (!open) setTooltipBasicActionId(null); }}
+              placement="top"
+            >
+              <button
+                onClick={() => handleBasicActionClick(action.id)}
+                onMouseEnter={() => { if (!disabled) setTooltipBasicActionId(action.id); }}
+                onMouseLeave={() => setTooltipBasicActionId(null)}
+                disabled={disabled}
+                style={buttonStyle(action.color)}
+              >
+                {action.emoji} {action.label}
+              </button>
+            </Tooltip>
+          );
+        })}
         {abilities.map((ab) => {
           const cd = cooldowns[ab.id] ?? 0;
           const isDisabled = disabled || cd > 0;
