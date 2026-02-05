@@ -99,8 +99,15 @@ def compute_action_tooltips(
                 dot = ab.get("effect_if_not_defending_damage_per_tick", 5)
                 dur = ab.get("effect_if_not_defending_duration", 2)
                 summary_parts.append(f"If target not defending: apply Bleed {dot}/turn for {dur} turns.")
-            if aid == "shadowstep" and ab.get("effect_also_self"):
-                summary_parts.append("Grants Evasion (next hit avoided) to self.")
+            if aid == "shadowstep" and ab.get("effect_also_self") == "shadowstep_buff":
+                dur = ab.get("effect_also_self_duration", 2)
+                bonus = ab.get("dot_bonus_per_tick", 0)
+                pct = ab.get("dot_damage_pct", 1.0)
+                pct_str = f"{int((pct - 1) * 100)}% more" if pct != 1.0 else ""
+                extra = []
+                if bonus: extra.append(f"+{bonus} per tick")
+                if pct_str: extra.append(pct_str)
+                summary_parts.append(f"Grants Shadowstep buff for {dur} turns: your DoT deals {' and '.join(extra) or 'more damage'}.")
             entry["summary"] = " ".join(summary_parts)
 
         elif ab.get("type") == "heal":
@@ -228,6 +235,15 @@ def compute_effect_tooltip(effect: Dict[str, Any]) -> Dict[str, Any]:
                     out["summary"] = f"+{out['damage_boost_pct']}% damage, +{out['defense_boost_pct']}% reduction, +{out['heal_boost_pct']}% healing until end of your next turn. {turns} turn(s) left."
                     return out
         out["summary"] = f"Transform. {turns} turn(s) left."
+    elif name == "shadowstep_buff":
+        bonus = effect.get("dot_bonus_per_tick", 0)
+        pct = effect.get("dot_damage_pct", 1.0)
+        out["dot_bonus_per_tick"] = bonus
+        out["dot_damage_pct"] = int((pct - 1) * 100) if pct != 1.0 else None
+        parts = []
+        if bonus: parts.append(f"+{bonus} DoT per tick")
+        if pct and pct != 1.0: parts.append(f"+{int((pct - 1) * 100)}% DoT damage")
+        out["summary"] = f"Your DoT deals {' and '.join(parts) or 'more damage'} until end of your next turn. {turns} turn(s) left."
     else:
         out["summary"] = f"{turns} turn(s) left."
 

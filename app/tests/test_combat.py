@@ -633,7 +633,7 @@ class TestChillEffect:
 
 
 class TestUniqueAbilityMechanics:
-    """Each class ability has a distinct mechanic: Shield Wall != Defend, Backstab applies bleed, Shadowstep grants evasion."""
+    """Each class ability has a distinct mechanic: Shield Wall != Defend, Backstab applies bleed, Shadowstep grants DoT buff."""
 
     def test_shield_wall_differs_from_defend(self, db_session):
         match = make_match(db_session, player1_class="warrior", player2_class="mage")
@@ -652,13 +652,37 @@ class TestUniqueAbilityMechanics:
         effects = getattr(match, "player2_effects", None) or []
         assert any(e.get("name") == "bleed" for e in effects), "Backstab should apply Bleed when target not defending"
 
-    def test_shadowstep_grants_evasion_to_self(self, db_session):
+    def test_shadowstep_grants_dot_buff_to_self(self, db_session):
         match = make_match(db_session, player1_class="rogue", player2_class="warrior")
         process_ability(match, match.player1_id, "shadowstep", db_session)
         db_session.commit()
         db_session.refresh(match)
         effects = getattr(match, "player1_effects", None) or []
-        assert any(e.get("name") == "evade" for e in effects), "Shadowstep should grant Evasion to self"
+        assert any(e.get("name") == "shadowstep_buff" for e in effects), "Shadowstep should grant shadowstep_buff to self"
+        buff = next(e for e in effects if e.get("name") == "shadowstep_buff")
+        assert buff.get("dot_bonus_per_tick") == 3
+        assert buff.get("dot_damage_pct") == 1.25
+
+    def test_shadowstep_buff_amplifies_rogue_dot_ticks(self, db_session):
+        """When the rogue has shadowstep_buff, their DoT (e.g. poison) on the enemy ticks for more damage."""
+        from app.game.combat import _apply_dot_ticks
+
+        match = make_match(db_session, player1_class="rogue", player2_class="warrior")
+        # P1 shadowstep -> gets shadowstep_buff
+        process_ability(match, match.player1_id, "shadowstep", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        # P1 applies poison to P2 (6/tick base)
+        process_ability(match, match.player1_id, "poison", db_session)
+        db_session.commit()
+        db_session.refresh(match)
+        hp_before_tick = match.player2_health
+        # DoT ticks at start of target's turn: apply DoT to P2 (poison source is P1 who has shadowstep_buff)
+        _apply_dot_ticks(match, match.player2_id, db_session)
+        hp_after_tick = match.player2_health
+        # Base poison is 6/tick; with buff: int(6 * 1.25) + 3 = 7 + 3 = 10
+        damage_dealt = hp_before_tick - hp_after_tick
+        assert damage_dealt == 10, f"Shadowstep buff should amplify DoT to 10 damage/tick, got {damage_dealt}"
 
 
 class TestChillPersistsUntilCasterNextTurn:

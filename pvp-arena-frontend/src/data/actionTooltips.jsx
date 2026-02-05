@@ -49,7 +49,7 @@ export function buildEffectTooltipContent(effect) {
     duration: turns,
     hits_left: hits,
   };
-  if (typeof effect === "object") {
+    if (typeof effect === "object") {
     if (effect.value != null) stats.shield_amount = effect.value;
     if (effect.damage_per_tick != null) stats.damage_per_tick = effect.damage_per_tick;
     if (effect.reflect_pct != null) stats.reflect_pct = Math.round((effect.reflect_pct || 0) * 100);
@@ -59,6 +59,8 @@ export function buildEffectTooltipContent(effect) {
     if (effect.defense_boost_pct != null) stats.defense_boost_pct = Math.round((effect.defense_boost_pct || 0) * 100);
     if (effect.heal_boost_pct != null) stats.heal_boost_pct = Math.round((effect.heal_boost_pct || 0) * 100);
     if (effect.damage_taken_pct != null) stats.damage_taken_pct = Math.round((effect.damage_taken_pct || 0) * 100);
+    if (effect.dot_bonus_per_tick != null) stats.dot_bonus_per_tick = effect.dot_bonus_per_tick;
+    if (effect.dot_damage_pct != null) stats.dot_damage_pct = typeof effect.dot_damage_pct === "number" ? effect.dot_damage_pct : Math.round((effect.dot_damage_pct - 1) * 100);
     if (name === "shapeshift" && stats.damage_boost_pct == null) {
       stats.damage_boost_pct = SHAPESHIFT_BONUSES.damage_boost_pct;
       stats.defense_boost_pct = SHAPESHIFT_BONUSES.defense_boost_pct;
@@ -80,7 +82,12 @@ export function buildEffectTooltipContent(effect) {
     else if (stats.damage_per_tick != null) stats.summary = stats.damage_per_tick + " damage/turn. " + (turns != null ? turns + " turn(s) left." : "");
     else if (stats.reflect_pct != null) stats.summary = "Reflects " + stats.reflect_pct + "% damage until end of your next turn. " + (turns != null ? turns + " turn(s) left." : "");
     else if (stats.avoid_pct != null) stats.summary = "Avoids " + stats.avoid_pct + "% of next attack until end of your next turn. " + (turns != null ? turns + " turn(s) left." : "");
-    else if ((stats.damage_boost_pct != null || stats.defense_boost_pct != null || stats.heal_boost_pct != null) && name === "shapeshift") {
+    else if (name === "shadowstep_buff") {
+      const parts = [];
+      if (stats.dot_bonus_per_tick != null) parts.push("+" + stats.dot_bonus_per_tick + " DoT per tick");
+      if (stats.dot_damage_pct != null) parts.push("+" + stats.dot_damage_pct + "% DoT damage");
+      stats.summary = (parts.length ? "Your DoT deals " + parts.join(" and ") + ". " : "Your DoT deals more damage. ") + (turns != null ? turns + " turn(s) left." : "");
+    } else if ((stats.damage_boost_pct != null || stats.defense_boost_pct != null || stats.heal_boost_pct != null) && name === "shapeshift") {
       const parts = [];
       if (stats.damage_boost_pct != null) parts.push("+" + stats.damage_boost_pct + "% damage");
       if (stats.defense_boost_pct != null) parts.push("+" + stats.defense_boost_pct + "% reduction");

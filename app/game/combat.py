@@ -305,6 +305,7 @@ def initialize_match(match: Match, db: Session) -> None:
 def _apply_dot_ticks(match: Match, player_id: int, db: Session) -> None:
     """
     At start of turn: apply DoT damage to the given player for each effect that has damage_per_tick.
+    If the DoT source has shadowstep_buff, damage is amplified (dot_damage_pct and dot_bonus_per_tick).
     Decrement turns_left and remove effect when 0. Emit combat log entries for each tick.
     """
     effects = _get_effects(match, player_id)
@@ -317,6 +318,13 @@ def _apply_dot_ticks(match: Match, player_id: int, db: Session) -> None:
         effect_name = e.get("name", "unknown")
         turns_left = e.get("turns_left", 1)
         current_hp = match.player1_health if is_p1 else match.player2_health
+        # Amplify if the player who applied this DoT has shadowstep_buff
+        source_id = e.get("source_id")
+        if source_id is not None and _has_effect(match, source_id, "shadowstep_buff"):
+            buff = _get_effect_params(match, source_id, "shadowstep_buff")
+            pct = buff.get("dot_damage_pct", 1.0) if buff else 1.0
+            bonus = buff.get("dot_bonus_per_tick", 0) if buff else 0
+            dmg_per_tick = int(dmg_per_tick * pct) + bonus
         actual_damage = min(dmg_per_tick, current_hp)
         if actual_damage > 0:
             if is_p1:
@@ -709,25 +717,32 @@ def process_ability(match: Match, player_id: int, ability_id: str, db: Session) 
                 "duration": duration,
             }
             _add_combat_log_event(match, log_eff, db)
-        # Shadowstep: also grant Evasion (next hit) to self
-        if ability_id == "shadowstep" and ab.get("effect_also_self"):
-            eff_name = ab["effect_also_self"]
+        # Shadowstep: apply shadowstep_buff to self (amplifies your DoT for a short time)
+        if ability_id == "shadowstep" and ab.get("effect_also_self") == "shadowstep_buff":
+            eff_name = "shadowstep_buff"
+            duration = ab.get("effect_also_self_duration", 2)
             self_effects = _get_effects(match, player_id)
-            eff_dict = {"name": eff_name, "hits_left": ab.get("effect_also_self_hits_left", 1), "source_id": player_id, "remaining_turns_until_expiry": 2}
-            if ab.get("effect_also_self_avoid_pct") is not None:
-                eff_dict["avoid_pct"] = ab["effect_also_self_avoid_pct"]
+            eff_dict = {
+                "name": eff_name,
+                "source_id": player_id,
+                "turns_left": duration,
+                "remaining_turns_until_expiry": (duration or 1) + 1,
+            }
+            if ab.get("dot_bonus_per_tick") is not None:
+                eff_dict["dot_bonus_per_tick"] = ab["dot_bonus_per_tick"]
+            if ab.get("dot_damage_pct") is not None:
+                eff_dict["dot_damage_pct"] = ab["dot_damage_pct"]
             self_effects.append(eff_dict)
             flag_modified(match, "player1_effects" if is_player1 else "player2_effects")
-
-            log_evade_self = {
+            log_buff = {
                 "action_type": "effect_applied",
                 "action_key": "shadowstep",
                 "actor_id": player_id,
                 "target_id": player_id,
                 "effect": eff_name,
-                "hits_left": ab.get("effect_also_self_hits_left", 1),
+                "duration": duration,
             }
-            _add_combat_log_event(match, log_evade_self, db)
+            _add_combat_log_event(match, log_buff, db)
         # Attack abilities that apply a DoT/debuff (e.g. fireball -> burn, ice_bolt -> chill)
         if ab.get("effect") and ab.get("effect_target") == "enemy" and ab.get("duration"):
             eff_name = ab["effect"]

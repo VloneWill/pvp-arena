@@ -42,9 +42,10 @@ ABILITY_DEFS: Dict[str, List[Dict[str, Any]]] = {
         # Evade: next incoming hit avoided by 100%; consumed on hit (hits_left, not turns)
         {"id": "evade", "name": "Evade", "type": "effect", "effect": "evade", "cooldown": 4, "effect_target": "self", "avoid_pct": 1.0, "hits_left": 1},
         {"id": "poison", "name": "Poison", "type": "effect", "effect": "poison", "duration": 3, "cooldown": 3, "effect_target": "enemy", "damage_per_tick": 6},
-        # Shadowstep: small damage + grant Evasion (next hit avoided) to self
+        # Shadowstep: small damage + self-buff that amplifies your DoT (bleed/poison) per tick for a short time
         {"id": "shadowstep", "name": "Shadowstep", "type": "attack", "damage_multiplier": 0.85, "cooldown": 5,
-         "effect_also_self": "evade", "effect_also_self_hits_left": 1, "effect_also_self_avoid_pct": 1.0},
+         "effect_also_self": "shadowstep_buff", "effect_also_self_duration": 2,
+         "dot_bonus_per_tick": 3, "dot_damage_pct": 1.25},
     ],
 }
 

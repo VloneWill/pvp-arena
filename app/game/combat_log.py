@@ -28,6 +28,7 @@ ACTION_LABELS = {
     "evade": "Evade",
     "poison": "Poison",
     "shadowstep": "Shadowstep",
+    "shadowstep_buff": "Shadowstep",
     "bleed": "Bleed",
     "chill": "Chill",
     "dot_tick": "DoT",
