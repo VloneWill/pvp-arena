@@ -12,7 +12,6 @@ export default function ArenaScene({ backgroundImageUrl, leftClassName, leftPose
         position: "relative",
         width: "100%",
         aspectRatio: "2 / 1",
-        minHeight: 180,
         maxHeight: "min(50vh, 320px)",
         borderRadius: 8,
         overflow: "hidden",
@@ -30,7 +29,7 @@ export default function ArenaScene({ backgroundImageUrl, leftClassName, leftPose
             width: "100%",
             height: "100%",
             objectFit: "cover",
-            objectPosition: "center center",
+            objectPosition: "center bottom",
           }}
         />
       )}

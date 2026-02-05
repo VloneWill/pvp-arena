@@ -80,7 +80,7 @@ button:focus-visible {
   }
 }
 
-/* Match screen: player cards + VS. Desktop: side-by-side with min width; mobile: stack */
+/* Match screen: player cards + VS. Desktop: side-by-side with min width; mobile: same row, flexible columns */
 .match-cards-row {
   display: grid;
   gap: 16px;
@@ -90,8 +90,7 @@ button:focus-visible {
 
 @media (max-width: 520px) {
   .match-cards-row {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   }
 
   .match-cards-row .match-vs {

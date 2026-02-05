@@ -31,7 +31,7 @@ ABILITY_DEFS: Dict[str, List[Dict[str, Any]]] = {
     "druid": [
         {"id": "regrowth", "name": "Regrowth", "type": "heal", "heal_multiplier": 1.7, "cooldown": 3},
         {"id": "thorns", "name": "Thorns", "type": "effect", "effect": "thorns", "duration": 3, "cooldown": 3, "effect_target": "self", "reflect_pct": 0.30},
-        {"id": "shapeshift", "name": "Shapeshift", "type": "effect", "effect": "shapeshift", "duration": 4, "cooldown": 4, "effect_target": "self",
+        {"id": "shapeshift", "name": "Shapeshift", "type": "effect", "effect": "shapeshift", "duration": 3, "cooldown": 4, "effect_target": "self",
          "damage_boost_pct": 0.25, "defense_boost_pct": 0.25, "heal_boost_pct": 0.20},
         {"id": "nature_wrath", "name": "Nature Wrath", "type": "attack", "damage_multiplier": 1.45, "cooldown": 3},
     ],
