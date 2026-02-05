@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Tooltip from "./Tooltip";
 import { humanize } from "../utils/formatters";
 import { buildActionTooltipContent } from "../data/actionTooltips";
+
+const ACTION_COOLDOWN_MS = 800;
 
 const CLASS_ABILITIES = {
   warrior: [
@@ -37,6 +39,7 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
   const [tooltipAbilityId, setTooltipAbilityId] = useState(null);
   const [turnSecondsLeft, setTurnSecondsLeft] = useState(null);
   const abilities = className ? CLASS_ABILITIES[className] : [];
+  const lastActionTimeRef = useRef(0);
 
   useEffect(() => {
     if (!turnExpiresAt) {
@@ -63,14 +66,23 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
     fontWeight: "bold",
     cursor: (disabled || isDisabled) ? "not-allowed" : "pointer",
     opacity: (disabled || isDisabled) ? 0.6 : 1,
+    touchAction: "manipulation",
+    userSelect: "none",
   });
+
+  const guardAndAction = (actionKey, handler) => {
+    const now = Date.now();
+    if (now - lastActionTimeRef.current < ACTION_COOLDOWN_MS) return;
+    lastActionTimeRef.current = now;
+    handler();
+  };
 
   const handleAbilityClick = (ab) => {
     const cd = cooldowns[ab.id] ?? 0;
     if (disabled || cd > 0) return;
     if (tooltipAbilityId === ab.id) {
       setTooltipAbilityId(null);
-      onAction(ab.id);
+      guardAndAction(ab.id, () => onAction(ab.id));
     } else {
       setTooltipAbilityId(ab.id);
     }
@@ -78,7 +90,7 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
 
   const handleAbilityUse = (ab) => {
     setTooltipAbilityId(null);
-    onAction(ab.id);
+    guardAndAction(ab.id, () => onAction(ab.id));
   };
 
   return (
@@ -133,7 +145,7 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
       <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
         <Tooltip content={buildActionTooltipContent("attack", myActionTooltips, "Attack")} placement="top">
           <button
-            onClick={() => onAction("attack")}
+            onClick={() => guardAndAction("attack", () => onAction("attack"))}
             disabled={disabled}
             style={buttonStyle("#dc3545")}
           >
@@ -142,7 +154,7 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
         </Tooltip>
         <Tooltip content={buildActionTooltipContent("defend", myActionTooltips, "Defend")} placement="top">
           <button
-            onClick={() => onAction("defend")}
+            onClick={() => guardAndAction("defend", () => onAction("defend"))}
             disabled={disabled}
             style={buttonStyle("#0d6efd")}
           >
@@ -151,7 +163,7 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
         </Tooltip>
         <Tooltip content={buildActionTooltipContent("heal", myActionTooltips, "Heal")} placement="top">
           <button
-            onClick={() => onAction("heal")}
+            onClick={() => guardAndAction("heal", () => onAction("heal"))}
             disabled={disabled}
             style={buttonStyle("#198754")}
           >

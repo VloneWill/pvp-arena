@@ -11,7 +11,9 @@ export default function ArenaScene({ backgroundImageUrl, leftClassName, leftPose
       style={{
         position: "relative",
         width: "100%",
-        minHeight: 220,
+        aspectRatio: "2 / 1",
+        minHeight: 180,
+        maxHeight: "min(50vh, 320px)",
         borderRadius: 8,
         overflow: "hidden",
         border: "1px solid #333",

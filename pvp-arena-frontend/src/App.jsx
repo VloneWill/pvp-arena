@@ -664,8 +664,15 @@ export default function App() {
           </div>
         ) : (
           <>
-        <header style={{ textAlign: "center", marginBottom: 20, flexShrink: 0 }}>
-          <AppLogo width={500} height={230} style={{ margin: "0 auto" }} />
+        <header style={{ textAlign: "center", marginBottom: 20, flexShrink: 0, width: "100%", boxSizing: "border-box" }}>
+          <AppLogo
+            style={{
+              margin: "0 auto",
+              width: "clamp(280px, 85vw, 500px)",
+              height: "auto",
+              maxWidth: "100%",
+            }}
+          />
         </header>
         <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1, minHeight: 0 }}>
           <HeaderBar
