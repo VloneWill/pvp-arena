@@ -107,18 +107,6 @@ export default function PlayerCard({ playerId, username, health, maxHealth, isAc
             {level && ` Lv.${level}`}
           </div>
         </div>
-        {isActive && (
-          <div style={{ 
-            padding: "4px 12px", 
-            backgroundColor: "#4a9eff", 
-            color: "white", 
-            borderRadius: 12,
-            fontSize: "12px",
-            fontWeight: "bold"
-          }}>
-            {isMe ? "Your Turn" : "Opponent's Turn"}
-          </div>
-        )}
       </div>
       <HealthBar current={health} max={maxHealth} isActive={isActive} flashColor={flashColor} />
       <div style={{ marginTop: 8, fontSize: "11px", color: "#aaa", display: "flex", flexWrap: "wrap", gap: 4, minHeight: 24 }}>
