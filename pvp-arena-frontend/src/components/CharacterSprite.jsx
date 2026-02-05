@@ -20,7 +20,7 @@ export default function CharacterSprite({ className, pose = "idle", faceLeft = f
     <div
       style={{
         position: "absolute",
-        bottom: 0,
+        bottom: "20%",
         left: faceLeft ? undefined : positionOffset,
         right: faceLeft ? positionOffset : undefined,
         width: widthPct,
