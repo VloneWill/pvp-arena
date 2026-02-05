@@ -19,8 +19,6 @@ rape
 retard
 fag
 faggot
-nigger
-nigga
 chink
 spic
 kike
@@ -64,6 +62,8 @@ antisemit
 xenophob
 transphob
 homophob
+nigger
+nigga
 wtf
 stfu
 stf
@@ -212,14 +212,6 @@ dwarf
 fatty
 chubby
 lard
-whale
-pig
-cow
-dog
-animal
-beast
-monster
-freak
 weirdo
 creep
 stalker
@@ -229,8 +221,6 @@ pervert
 weirdo
 sus
 suspicious
-sketch
-sketchy
 scam
 scammer
 cheater
@@ -254,3 +244,4 @@ clapped
 bodied
 humbled
 cancelled
+dih

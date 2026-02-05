@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Tooltip from "./Tooltip";
 import { humanize } from "../utils/formatters";
 import { buildActionTooltipContent } from "../data/actionTooltips";
@@ -30,12 +30,28 @@ const CLASS_ABILITIES = {
   ],
 };
 
-export default function ActionBar({ canAct, inFlight, onAction, className, abilityCooldowns, actionTooltips }) {
+export default function ActionBar({ canAct, inFlight, onAction, className, abilityCooldowns, actionTooltips, turnExpiresAt }) {
   const disabled = !canAct || inFlight;
   const cooldowns = abilityCooldowns || {};
   const myActionTooltips = actionTooltips || {};
   const [tooltipAbilityId, setTooltipAbilityId] = useState(null);
+  const [turnSecondsLeft, setTurnSecondsLeft] = useState(null);
   const abilities = className ? CLASS_ABILITIES[className] : [];
+
+  useEffect(() => {
+    if (!turnExpiresAt) {
+      setTurnSecondsLeft(null);
+      return;
+    }
+    const update = () => {
+      const end = new Date(turnExpiresAt).getTime();
+      const now = Date.now();
+      setTurnSecondsLeft(Math.max(0, Math.ceil((end - now) / 1000)));
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [turnExpiresAt]);
 
   const buttonStyle = (color, isDisabled = false) => ({
     backgroundColor: (disabled || isDisabled) ? "#4a5568" : color,
@@ -71,8 +87,49 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
       border: "2px solid #4a5568",
       borderRadius: 8,
       backgroundColor: "#1e1e1e",
+      marginTop: 4,
     }}>
-      <h3 style={{ marginTop: 0, textAlign: "center", color: "white" }}>Your Actions</h3>
+      <div style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        marginBottom: 16,
+      }}>
+        <h3 style={{ margin: 0, color: "white", fontSize: "18px" }}>Your Actions</h3>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexShrink: 0,
+        }}>
+          <span style={{
+            color: canAct ? "#4ade80" : "#94a3b8",
+            fontWeight: "bold",
+            fontSize: "14px",
+          }}>
+            {canAct ? "Your Turn" : "Opponent's Turn"}
+          </span>
+          {turnSecondsLeft != null && (
+            <span style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minWidth: 48,
+              padding: "6px 10px",
+              backgroundColor: "rgba(0,0,0,0.35)",
+              color: "#f1f5f9",
+              fontWeight: "bold",
+              fontSize: "20px",
+              borderRadius: 6,
+              border: "1px solid #475569",
+            }}>
+              {turnSecondsLeft}s
+            </span>
+          )}
+        </div>
+      </div>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
         <Tooltip content={buildActionTooltipContent("attack", myActionTooltips, "Attack")} placement="top">
           <button

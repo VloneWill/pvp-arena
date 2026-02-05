@@ -2,9 +2,10 @@ import MatchBanner from "./MatchBanner";
 import PlayerCard from "./PlayerCard";
 import ActionBar from "./ActionBar";
 import CombatLog from "./CombatLog";
+import ArenaScene from "./ArenaScene";
 
 /**
- * Game layout: player panels, center action bar, scrollable combat log.
+ * Game layout: arena scene, player panels, action bar, combat log.
  * Used when a match is active or just finished.
  */
 export default function GameLayout({
@@ -12,13 +13,8 @@ export default function GameLayout({
   status,
   winnerUsername,
   winnerId,
-  usernameMap,
-  userInfoMap,
-  getUsername,
-  getMaxHp,
-  healthFlash,
-  isPlayer1,
-  currentTurn,
+  leftPlayer,
+  rightPlayer,
   canAct,
   actionInFlight,
   onAction,
@@ -26,18 +22,16 @@ export default function GameLayout({
   myCooldowns,
   actionTooltips,
   combatLog,
+  matchBackgroundUrl,
   onReturnToMatchmaking,
   onForfeit,
   error,
 }) {
-  const p1Info = userInfoMap[gameState?.player1_id];
-  const p2Info = userInfoMap[gameState?.player2_id];
-
   return (
     <div style={{
       display: "grid",
       gap: 20,
-      gridTemplateRows: "auto auto 1fr auto",
+      gridTemplateRows: "auto auto auto auto 1fr auto auto",
       flex: 1,
       minHeight: 0,
     }}>
@@ -45,45 +39,54 @@ export default function GameLayout({
         status={status}
         winnerUsername={winnerUsername}
         winnerId={winnerId}
-        turnExpiresAt={gameState?.turn_expires_at}
       />
 
-      {gameState && (
+      {gameState && leftPlayer && rightPlayer && (
         <div className="match-cards-row">
-          <div style={{ order: isPlayer1 ? 3 : 1, minWidth: 0 }}>
+          <div style={{ minWidth: 0 }}>
             <PlayerCard
-              playerId={gameState.player1_id}
-              username={getUsername(gameState.player1_id, usernameMap)}
-              health={gameState.player1_health}
-              maxHealth={getMaxHp(gameState.player1_id, p1Info, gameState)}
-              isActive={status === "active" && currentTurn === gameState.player1_id}
-              isMe={isPlayer1}
-              flashColor={healthFlash.p1}
-              className={p1Info?.class_name}
-              level={p1Info?.level}
-              xp={p1Info?.xp}
-              activeEffects={gameState.player1_effects || []}
+              playerId={leftPlayer.playerId}
+              username={leftPlayer.username}
+              health={leftPlayer.health}
+              maxHealth={leftPlayer.maxHealth}
+              isActive={leftPlayer.isActive}
+              isMe={leftPlayer.isMe}
+              flashColor={leftPlayer.flashColor}
+              className={leftPlayer.class_name}
+              level={leftPlayer.level}
+              xp={leftPlayer.xp}
+              activeEffects={leftPlayer.activeEffects}
             />
           </div>
-          <div className="match-vs" style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: "bold", color: "#666", order: 2 }}>
+          <div className="match-vs" style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: "bold", color: "#666" }}>
             VS
           </div>
-          <div style={{ order: isPlayer1 ? 1 : 3, minWidth: 0 }}>
+          <div style={{ minWidth: 0 }}>
             <PlayerCard
-              playerId={gameState.player2_id}
-              username={getUsername(gameState.player2_id, usernameMap)}
-              health={gameState.player2_health}
-              maxHealth={getMaxHp(gameState.player2_id, p2Info, gameState)}
-              isActive={status === "active" && currentTurn === gameState.player2_id}
-              isMe={!isPlayer1}
-              flashColor={healthFlash.p2}
-              className={p2Info?.class_name}
-              level={p2Info?.level}
-              xp={p2Info?.xp}
-              activeEffects={gameState.player2_effects || []}
+              playerId={rightPlayer.playerId}
+              username={rightPlayer.username}
+              health={rightPlayer.health}
+              maxHealth={rightPlayer.maxHealth}
+              isActive={rightPlayer.isActive}
+              isMe={rightPlayer.isMe}
+              flashColor={rightPlayer.flashColor}
+              className={rightPlayer.class_name}
+              level={rightPlayer.level}
+              xp={rightPlayer.xp}
+              activeEffects={rightPlayer.activeEffects}
             />
           </div>
         </div>
+      )}
+
+      {gameState && leftPlayer && rightPlayer && (
+        <ArenaScene
+          backgroundImageUrl={matchBackgroundUrl}
+          leftClassName={leftPlayer.class_name}
+          leftPose={leftPlayer.pose}
+          rightClassName={rightPlayer.class_name}
+          rightPose={rightPlayer.pose}
+        />
       )}
 
       {status === "active" && (
@@ -94,6 +97,7 @@ export default function GameLayout({
           className={myInfo?.class_name}
           abilityCooldowns={myCooldowns}
           actionTooltips={actionTooltips}
+          turnExpiresAt={gameState?.turn_expires_at}
         />
       )}
 

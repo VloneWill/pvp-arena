@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "./api/client";
 import { getUsername, humanize } from "./utils/formatters";
 import { useMatchPolling, useMatchmakingPolling } from "./hooks/useMatchPolling";
+import { getRandomBackground } from "./data/assetMap";
+import { getActorPose, isDefenderMitigating } from "./data/poseFromAction";
 import AuthPanel from "./components/AuthPanel";
+import AppLogo from "./components/AppLogo";
 import HeaderBar from "./components/HeaderBar";
 import GameLayout from "./components/GameLayout";
 import MatchHistory from "./components/MatchHistory";
 import Leaderboard from "./components/Leaderboard";
+import landingPageBg from "./assets/landing_page/landing_page.png";
 
 export default function App() {
   const [mode, setMode] = useState("login");
@@ -31,11 +35,30 @@ export default function App() {
   const [prevGameState, setPrevGameState] = useState(null);
   const [matchFinishedTime, setMatchFinishedTime] = useState(null);
   const [hasRefreshedForFinish, setHasRefreshedForFinish] = useState(false);
+  const [matchBackgroundUrl, setMatchBackgroundUrl] = useState(null);
+  const [playerPoses, setPlayerPoses] = useState({});
 
   const [error, setError] = useState("");
   const [usernameError, setUsernameError] = useState("");
 
+  const lastCombatLogLengthRef = useRef(0);
+  const poseTimeoutRef = useRef({});
+
   const isAuthed = useMemo(() => Boolean(token), [token]);
+
+  const POSE_DURATION_MS = 900;
+
+  function setPlayerPose(playerId, pose) {
+    if (!playerId || !["idle", "attack", "defend"].includes(pose)) return;
+    setPlayerPoses((prev) => ({ ...prev, [playerId]: pose }));
+    if (pose === "idle") return;
+    const key = String(playerId);
+    if (poseTimeoutRef.current[key]) clearTimeout(poseTimeoutRef.current[key]);
+    poseTimeoutRef.current[key] = setTimeout(() => {
+      setPlayerPoses((prev) => ({ ...prev, [playerId]: "idle" }));
+      delete poseTimeoutRef.current[key];
+    }, POSE_DURATION_MS);
+  }
 
   async function loadMe(t = token) {
     const data = await apiFetch("/auth/me", { token: t });
@@ -88,6 +111,38 @@ export default function App() {
     });
     //eslint-disable-next-line
   }, [token]);
+
+  // Random background once per match; clear when match ends
+  useEffect(() => {
+    if (!match) {
+      setMatchBackgroundUrl(null);
+      setPlayerPoses({});
+      lastCombatLogLengthRef.current = 0;
+      return;
+    }
+    setMatchBackgroundUrl((prev) => (prev ? prev : getRandomBackground()));
+  }, [match]);
+
+  // Trigger pose changes only when a new action appears in combat_log
+  useEffect(() => {
+    const log = gameState?.combat_log;
+    if (!Array.isArray(log) || !gameState?.player1_id || !gameState?.player2_id) return;
+    const len = log.length;
+    if (len <= lastCombatLogLengthRef.current) return;
+    lastCombatLogLengthRef.current = len;
+    const lastEvent = log[len - 1];
+    const actionType = lastEvent?.action_type;
+    const actionKey = lastEvent?.action_key ?? actionType;
+    const actorId = lastEvent?.actor_id ?? lastEvent?.attacker_id;
+    if (actorId) {
+      const pose = getActorPose(actionType, actionKey);
+      setPlayerPose(actorId, pose);
+    }
+    const defenderId = lastEvent?.defender_id;
+    if (defenderId && isDefenderMitigating(lastEvent)) {
+      setPlayerPose(defenderId, "defend");
+    }
+  }, [gameState?.combat_log, gameState?.player1_id, gameState?.player2_id]);
 
   // Reconcile matchmaking status on load (e.g. after refresh)
   useEffect(() => {
@@ -481,17 +536,53 @@ export default function App() {
   const winnerId = gameState?.winner_id;
   const canAct = Boolean(match && gameState && status === "active" && currentTurn === myId && !actionInFlight);
   const isPlayer1 = gameState && myId === gameState.player1_id;
-  
-  // Get user info for both players
-  const p1Info = userInfoMap[gameState?.player1_id];
-  const p2Info = userInfoMap[gameState?.player2_id];
+  const p1Id = gameState?.player1_id;
+  const p2Id = gameState?.player2_id;
+
+  // Single rule: You (current user) = RIGHT, Opponent = LEFT. Same for sprites and cards.
+  const leftPlayer = useMemo(() => {
+    if (!gameState || !myId) return null;
+    const opponentId = isPlayer1 ? p2Id : p1Id;
+    const info = userInfoMap[opponentId];
+    return {
+      playerId: opponentId,
+      username: getUsername(opponentId, usernameMap),
+      health: isPlayer1 ? gameState.player2_health : gameState.player1_health,
+      maxHealth: getMaxHp(opponentId, info, gameState),
+      class_name: info?.class_name,
+      level: info?.level,
+      xp: info?.xp,
+      isActive: status === "active" && currentTurn === opponentId,
+      isMe: false,
+      flashColor: isPlayer1 ? healthFlash.p2 : healthFlash.p1,
+      activeEffects: isPlayer1 ? (gameState.player2_effects || []) : (gameState.player1_effects || []),
+      pose: (playerPoses[opponentId] ?? "idle"),
+    };
+  }, [gameState, myId, isPlayer1, p1Id, p2Id, userInfoMap, usernameMap, status, currentTurn, healthFlash, playerPoses]);
+
+  const rightPlayer = useMemo(() => {
+    if (!gameState || !myId) return null;
+    const info = userInfoMap[myId];
+    return {
+      playerId: myId,
+      username: getUsername(myId, usernameMap) || me?.username,
+      health: isPlayer1 ? gameState.player1_health : gameState.player2_health,
+      maxHealth: getMaxHp(myId, info, gameState),
+      class_name: info?.class_name,
+      level: info?.level,
+      xp: info?.xp,
+      isActive: status === "active" && currentTurn === myId,
+      isMe: true,
+      flashColor: isPlayer1 ? healthFlash.p1 : healthFlash.p2,
+      activeEffects: isPlayer1 ? (gameState.player1_effects || []) : (gameState.player2_effects || []),
+      pose: (playerPoses[myId] ?? "idle"),
+    };
+  }, [gameState, myId, isPlayer1, userInfoMap, usernameMap, me, status, currentTurn, healthFlash, playerPoses]);
+
   const myInfo = userInfoMap[myId];
-  
-  // Per-ability cooldowns and action tooltip stats for current player
   const myCooldowns = isPlayer1 ? (gameState?.player1_cooldowns || {}) : (gameState?.player2_cooldowns || {});
   const myActionTooltips = isPlayer1 ? (gameState?.player1_action_tooltips || {}) : (gameState?.player2_action_tooltips || {});
 
-  // Get winner username from map
   const winnerUsername = useMemo(() => {
     if (!winnerId) return null;
     return getUsername(winnerId, usernameMap);
@@ -510,31 +601,72 @@ export default function App() {
       alignItems: "stretch",
     }}>
       <div className="page-container" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, paddingTop: 20, paddingBottom: 20 }}>
-        <h1 style={{ textAlign: "center", marginBottom: 24, color: "white", flexShrink: 0 }}>⚔️ PvP Arena</h1>
-
         {!isAuthed ? (
-          <AuthPanel
-          mode={mode}
-          setMode={setMode}
-          username={username}
-          setUsername={(val) => {
-            setUsername(val);
-            setError("");
-            setUsernameError("");
-          }}
-          password={password}
-          setPassword={(val) => {
-            setPassword(val);
-            setError("");
-          }}
-          className={className}
-          setClassName={setClassName}
-          onLogin={handleLogin}
-          onRegister={handleRegister}
-          error={error}
-          usernameError={usernameError}
-        />
-      ) : (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundImage: `url(${landingPageBg})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              paddingTop: "clamp(24px, 6vw, 48px)",
+              paddingLeft: 16,
+              paddingRight: 16,
+              paddingBottom: 24,
+              overflow: "auto",
+            }}
+          >
+            <AppLogo
+              style={{
+                marginBottom: 40,
+                flexShrink: 0,
+                width: "clamp(320px, 85vw, 480px)",
+                height: "auto",
+              }}
+            />
+            <div
+              style={{
+                backgroundColor: "rgba(0,0,0,0.65)",
+                borderRadius: 12,
+                padding: 28,
+                maxWidth: 420,
+                width: "100%",
+                boxSizing: "border-box",
+              }}
+            >
+              <AuthPanel
+                mode={mode}
+                setMode={setMode}
+                username={username}
+                setUsername={(val) => {
+                  setUsername(val);
+                  setError("");
+                  setUsernameError("");
+                }}
+                password={password}
+                setPassword={(val) => {
+                  setPassword(val);
+                  setError("");
+                }}
+                className={className}
+                setClassName={setClassName}
+                onLogin={handleLogin}
+                onRegister={handleRegister}
+                error={error}
+                usernameError={usernameError}
+              />
+            </div>
+          </div>
+        ) : (
+          <>
+        <header style={{ textAlign: "center", marginBottom: 20, flexShrink: 0 }}>
+          <AppLogo width={500} height={230} style={{ margin: "0 auto" }} />
+        </header>
         <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: 1, minHeight: 0 }}>
           <HeaderBar
             username={me?.username || "Unknown"}
@@ -608,13 +740,8 @@ export default function App() {
               status={status}
               winnerUsername={winnerUsername}
               winnerId={winnerId}
-              usernameMap={usernameMap}
-              userInfoMap={userInfoMap}
-              getUsername={getUsername}
-              getMaxHp={getMaxHp}
-              healthFlash={healthFlash}
-              isPlayer1={isPlayer1}
-              currentTurn={currentTurn}
+              leftPlayer={leftPlayer}
+              rightPlayer={rightPlayer}
               canAct={canAct}
               actionInFlight={actionInFlight}
               onAction={doAction}
@@ -622,6 +749,7 @@ export default function App() {
               myCooldowns={myCooldowns}
               actionTooltips={myActionTooltips}
               combatLog={combatLog}
+              matchBackgroundUrl={matchBackgroundUrl}
               onReturnToMatchmaking={() => {
                 setMatch(null);
                 setGameState(null);
@@ -634,6 +762,7 @@ export default function App() {
             />
           )}
         </div>
+        </>
       )}
       </div>
     </div>
