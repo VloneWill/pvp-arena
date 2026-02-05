@@ -1,4 +1,7 @@
+import { useState, useEffect } from "react";
 import CharacterSprite from "./CharacterSprite";
+
+const MOBILE_BREAKPOINT = 768;
 
 /**
  * Battle scene: background + left/right character sprites.
@@ -6,6 +9,15 @@ import CharacterSprite from "./CharacterSprite";
  * leftPlayer/rightPlayer are derived in parent (opponent = left, you = right).
  */
 export default function ArenaScene({ backgroundImageUrl, leftClassName, leftPose, rightClassName, rightPose }) {
+  const [compact, setCompact] = useState(() => typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT);
+
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
+    const handler = (e) => setCompact(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
   return (
     <div
       style={{
@@ -47,11 +59,13 @@ export default function ArenaScene({ backgroundImageUrl, leftClassName, leftPose
           className={leftClassName || "warrior"}
           pose={leftPose || "idle"}
           faceLeft={false}
+          compact={compact}
         />
         <CharacterSprite
           className={rightClassName || "warrior"}
           pose={rightPose || "idle"}
           faceLeft
+          compact={compact}
         />
       </div>
     </div>
