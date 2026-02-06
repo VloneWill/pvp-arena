@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { log, isDebugEnabled } from "../utils/abilityModalDebug";
 
 const MARGIN = 10;
 
@@ -86,14 +87,18 @@ export default function Tooltip({
   const openedAtRef = useRef(0);
 
   useEffect(() => {
+    if (open && isDebugEnabled()) log("MODAL_MOUNT", {});
+    return () => {
+      if (open && isDebugEnabled()) log("MODAL_UNMOUNT", {});
+    };
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     openedAtRef.current = Date.now();
-    // eslint-disable-next-line no-console -- temporary debug
-    console.log("[Tooltip] open state: true");
     const onEscape = (e) => {
       if (e.key === "Escape") {
-        // eslint-disable-next-line no-console -- temporary debug
-        console.log("[Tooltip] close (escape)");
+        if (isDebugEnabled()) log("MODAL_CLOSE", { reason: "escape" });
         setOpen(false);
       }
     };
@@ -104,8 +109,9 @@ export default function Tooltip({
         containerRef.current && !containerRef.current.contains(e.target) &&
         tooltipRef.current && !tooltipRef.current.contains(e.target);
       if (isOutside) {
-        // eslint-disable-next-line no-console -- temporary debug
-        console.log("[Tooltip] outside-click fired", e.type, e.target);
+        if (isDebugEnabled()) {
+          log("OUTSIDE_HANDLER_FIRED", { eventType: e.type, willClose: true, targetTag: e.target?.tagName, targetClass: e.target?.className ?? "" });
+        }
         setOpen(false);
       }
     };

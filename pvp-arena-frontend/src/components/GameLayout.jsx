@@ -23,6 +23,8 @@ export default function GameLayout({
   actionTooltips,
   combatLog,
   matchBackgroundUrl,
+  matchId,
+  turnNumber,
   onReturnToMatchmaking,
   onForfeit,
   error,
@@ -98,6 +100,8 @@ export default function GameLayout({
           abilityCooldowns={myCooldowns}
           actionTooltips={actionTooltips}
           turnExpiresAt={gameState?.turn_expires_at}
+          turnNumber={turnNumber}
+          matchId={matchId}
         />
       )}
 

@@ -4,12 +4,14 @@ import { getUsername, humanize } from "./utils/formatters";
 import { useMatchPolling, useMatchmakingPolling } from "./hooks/useMatchPolling";
 import { getRandomBackground } from "./data/assetMap";
 import { getActorPose, isDefenderMitigating } from "./data/poseFromAction";
+import { log as abilityModalDebugLog } from "./utils/abilityModalDebug";
 import AuthPanel from "./components/AuthPanel";
 import AppLogo from "./components/AppLogo";
 import HeaderBar from "./components/HeaderBar";
 import GameLayout from "./components/GameLayout";
 import MatchHistory from "./components/MatchHistory";
 import Leaderboard from "./components/Leaderboard";
+import AbilityModalDebugOverlay from "./components/AbilityModalDebugOverlay";
 import landingPageBg from "./assets/landing_page/landing_page.png";
 
 export default function App() {
@@ -283,6 +285,11 @@ export default function App() {
     if (!matchId) return;
     try {
       const data = await apiFetch(`/matches/${matchId}/tick`, { method: "POST", token });
+      abilityModalDebugLog("POLL_TICK", {
+        turn: data?.game_state?.turn_number,
+        matchId,
+        hasGameState: Boolean(data?.game_state),
+      });
       if (data.game_state) {
         setGameState(data.game_state);
         if (data.match) setMatch(data.match);
@@ -600,6 +607,7 @@ export default function App() {
       flexDirection: "column",
       alignItems: "stretch",
     }}>
+      <AbilityModalDebugOverlay />
       <div className="page-container" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, paddingTop: 20, paddingBottom: 20 }}>
         {!isAuthed ? (
           <div
@@ -757,6 +765,8 @@ export default function App() {
               actionTooltips={myActionTooltips}
               combatLog={combatLog}
               matchBackgroundUrl={matchBackgroundUrl}
+              matchId={match?.id}
+              turnNumber={gameState?.turn_number}
               onReturnToMatchmaking={() => {
                 setMatch(null);
                 setGameState(null);

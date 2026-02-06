@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Tooltip from "./Tooltip";
 import { humanize } from "../utils/formatters";
 import { buildActionTooltipContent } from "../data/actionTooltips";
+import { log, isDebugEnabled } from "../utils/abilityModalDebug";
 
 const ACTION_COOLDOWN_MS = 800;
 
@@ -32,7 +33,7 @@ const CLASS_ABILITIES = {
   ],
 };
 
-export default function ActionBar({ canAct, inFlight, onAction, className, abilityCooldowns, actionTooltips, turnExpiresAt }) {
+export default function ActionBar({ canAct, inFlight, onAction, className, abilityCooldowns, actionTooltips, turnExpiresAt, turnNumber, matchId }) {
   const disabled = !canAct || inFlight;
   const cooldowns = abilityCooldowns || {};
   const myActionTooltips = actionTooltips || {};
@@ -83,15 +84,21 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
   const handleAbilityClick = (ab) => {
     const cd = cooldowns[ab.id] ?? 0;
     if (disabled || cd > 0) return;
+    if (isDebugEnabled()) {
+      log("TRIGGER_TAP", { abilityId: ab.id, abilityName: humanize(ab.id), turn: turnNumber, matchId });
+    }
     if (tooltipAbilityId === ab.id) {
+      if (isDebugEnabled()) log("MODAL_CLOSE", { reason: "use_same_tap", abilityId: ab.id, modalOpen: false });
       setTooltipAbilityId(null);
       guardAndAction(ab.id, () => onAction(ab.id));
     } else {
+      if (isDebugEnabled()) log("MODAL_OPEN", { reason: "trigger_tap", abilityId: ab.id, abilityName: humanize(ab.id), modalOpen: true, turn: turnNumber, matchId });
       setTooltipAbilityId(ab.id);
     }
   };
 
   const handleAbilityUse = (ab) => {
+    if (isDebugEnabled()) log("MODAL_CLOSE", { reason: "use_button", abilityId: ab.id, modalOpen: false });
     setTooltipAbilityId(null);
     guardAndAction(ab.id, () => onAction(ab.id));
   };
@@ -242,7 +249,12 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
               key={ab.id}
               content={tooltipContent}
               open={tooltipAbilityId === ab.id}
-              onOpenChange={(open) => { if (!open) setTooltipAbilityId(null); }}
+              onOpenChange={(open) => {
+                if (!open) {
+                  if (isDebugEnabled()) log("MODAL_CLOSE", { reason: "onOpenChange", abilityId: ab.id, modalOpen: false });
+                  setTooltipAbilityId(null);
+                }
+              }}
               placement="top"
             >
               <button
