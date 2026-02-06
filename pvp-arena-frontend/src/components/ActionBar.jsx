@@ -33,13 +33,11 @@ const CLASS_ABILITIES = {
   ],
 };
 
-export default function ActionBar({ canAct, inFlight, onAction, className, abilityCooldowns, actionTooltips, turnExpiresAt, turnNumber, matchId }) {
+export default function ActionBar({ canAct, inFlight, onAction, className, abilityCooldowns, actionTooltips, turnExpiresAt, turnNumber, matchId, selectedAbilityId, onSelectAbility }) {
   const disabled = !canAct || inFlight;
   const cooldowns = abilityCooldowns || {};
   const myActionTooltips = actionTooltips || {};
-  /** Which ability's confirm popup is open. Only close on user action (Use/cancel/outside); do not clear on timer or match polling. */
-  const [tooltipAbilityId, setTooltipAbilityId] = useState(null);
-  /** Which basic action's tooltip is open (mobile: first tap = show, second tap or Use = execute). */
+  /** Which basic action's tooltip is open (mobile: first tap = show, second tap or Use = execute). Ability confirm is controlled by parent via selectedAbilityId. */
   const [tooltipBasicActionId, setTooltipBasicActionId] = useState(null);
   const [turnSecondsLeft, setTurnSecondsLeft] = useState(null);
   const abilities = className ? CLASS_ABILITIES[className] : [];
@@ -87,20 +85,14 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
     if (isDebugEnabled()) {
       log("TRIGGER_TAP", { abilityId: ab.id, abilityName: humanize(ab.id), turn: turnNumber, matchId });
     }
-    if (tooltipAbilityId === ab.id) {
+    if (selectedAbilityId === ab.id) {
       if (isDebugEnabled()) log("MODAL_CLOSE", { reason: "use_same_tap", abilityId: ab.id, modalOpen: false });
-      setTooltipAbilityId(null);
+      onSelectAbility?.(null);
       guardAndAction(ab.id, () => onAction(ab.id));
     } else {
       if (isDebugEnabled()) log("MODAL_OPEN", { reason: "trigger_tap", abilityId: ab.id, abilityName: humanize(ab.id), modalOpen: true, turn: turnNumber, matchId });
-      setTooltipAbilityId(ab.id);
+      onSelectAbility?.(ab.id);
     }
-  };
-
-  const handleAbilityUse = (ab) => {
-    if (isDebugEnabled()) log("MODAL_CLOSE", { reason: "use_button", abilityId: ab.id, modalOpen: false });
-    setTooltipAbilityId(null);
-    guardAndAction(ab.id, () => onAction(ab.id));
   };
 
   const BASIC_ACTIONS = [
@@ -221,53 +213,16 @@ export default function ActionBar({ canAct, inFlight, onAction, className, abili
         {abilities.map((ab) => {
           const cd = cooldowns[ab.id] ?? 0;
           const isDisabled = disabled || cd > 0;
-          const tooltipContent = (
-            <div>
-              {buildActionTooltipContent(ab.id, myActionTooltips, humanize(ab.id))}
-              {tooltipAbilityId === ab.id && !isDisabled && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); handleAbilityUse(ab); }}
-                  style={{
-                    marginTop: 6,
-                    padding: "4px 10px",
-                    backgroundColor: "#6f42c1",
-                    color: "white",
-                    border: "none",
-                    borderRadius: 4,
-                    cursor: "pointer",
-                    fontSize: 11,
-                  }}
-                >
-                  Use
-                </button>
-              )}
-            </div>
-          );
           return (
-            <Tooltip
+            <button
               key={ab.id}
-              content={tooltipContent}
-              open={tooltipAbilityId === ab.id}
-              onOpenChange={(open) => {
-                if (!open) {
-                  if (isDebugEnabled()) log("MODAL_CLOSE", { reason: "onOpenChange", abilityId: ab.id, modalOpen: false });
-                  setTooltipAbilityId(null);
-                }
-              }}
-              placement="top"
+              onClick={() => handleAbilityClick(ab)}
+              disabled={isDisabled}
+              style={buttonStyle("#6f42c1", cd > 0)}
             >
-              <button
-                onClick={() => handleAbilityClick(ab)}
-                onMouseEnter={() => { if (!isDisabled) setTooltipAbilityId(ab.id); }}
-                onMouseLeave={() => setTooltipAbilityId(null)}
-                disabled={isDisabled}
-                style={buttonStyle("#6f42c1", cd > 0)}
-              >
-                {ab.emoji} {humanize(ab.id)}
-                {cd > 0 && " (" + cd + ")"}
-              </button>
-            </Tooltip>
+              {ab.emoji} {humanize(ab.id)}
+              {cd > 0 && " (" + cd + ")"}
+            </button>
           );
         })}
       </div>

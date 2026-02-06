@@ -1,12 +1,14 @@
+import { useState } from "react";
 import MatchBanner from "./MatchBanner";
 import PlayerCard from "./PlayerCard";
 import ActionBar from "./ActionBar";
 import CombatLog from "./CombatLog";
 import ArenaScene from "./ArenaScene";
+import AbilityConfirmModal from "./AbilityConfirmModal";
 
 /**
  * Game layout: arena scene, player panels, action bar, combat log.
- * Used when a match is active or just finished.
+ * Ability confirm modal lives here (stable in tree) so it does not remount on poll/timer.
  */
 export default function GameLayout({
   gameState,
@@ -29,6 +31,16 @@ export default function GameLayout({
   onForfeit,
   error,
 }) {
+  /** Which ability's confirm modal is open. Stable state; not cleared by polling. */
+  const [selectedAbilityId, setSelectedAbilityId] = useState(null);
+
+  const handleAbilityConfirm = () => {
+    if (selectedAbilityId) {
+      onAction(selectedAbilityId);
+      setSelectedAbilityId(null);
+    }
+  };
+
   return (
     <div style={{
       display: "grid",
@@ -92,17 +104,29 @@ export default function GameLayout({
       )}
 
       {status === "active" && (
-        <ActionBar
-          canAct={canAct}
-          inFlight={actionInFlight}
-          onAction={onAction}
-          className={myInfo?.class_name}
-          abilityCooldowns={myCooldowns}
-          actionTooltips={actionTooltips}
-          turnExpiresAt={gameState?.turn_expires_at}
-          turnNumber={turnNumber}
-          matchId={matchId}
-        />
+        <>
+          <AbilityConfirmModal
+            open={Boolean(selectedAbilityId)}
+            abilityId={selectedAbilityId}
+            actionTooltips={actionTooltips}
+            disabled={!canAct || actionInFlight || (selectedAbilityId && (myCooldowns?.[selectedAbilityId] ?? 0) > 0)}
+            onConfirm={handleAbilityConfirm}
+            onClose={() => setSelectedAbilityId(null)}
+          />
+          <ActionBar
+            canAct={canAct}
+            inFlight={actionInFlight}
+            onAction={onAction}
+            className={myInfo?.class_name}
+            abilityCooldowns={myCooldowns}
+            actionTooltips={actionTooltips}
+            turnExpiresAt={gameState?.turn_expires_at}
+            turnNumber={turnNumber}
+            matchId={matchId}
+            selectedAbilityId={selectedAbilityId}
+            onSelectAbility={setSelectedAbilityId}
+          />
+        </>
       )}
 
       {status === "finished" && (
